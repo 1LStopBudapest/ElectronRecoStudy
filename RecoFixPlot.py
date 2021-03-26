@@ -49,7 +49,7 @@ def plotEff(hnum, hden, xtitle, name, legTitle, sample, xmin = 0, ymin =0, xmax=
     
 
 def plotStackedEff(hnum, hden, colors, xtitle, name, legTitle, sample, xmin = 0, ymin =0, xmax=50, ymax=1.2):
-    if( not (len(hnum) == len(hden)) or (not (len(hnum) == len(colors)))):
+    if( not (len(hnum) == len(hden)) or ( len(hnum) > len(colors))):
         print("Error in plotStackedEff - arrays are incompatible.")
         return
     
@@ -83,6 +83,73 @@ def plotStackedEff(hnum, hden, colors, xtitle, name, legTitle, sample, xmin = 0,
     leg.Draw("SAME")
     c.SaveAs("RecoFixPlots/"+sample+"/"+name+".png")
     c.Close()
+
+'''
+def plotStackedEffAndRatio(hnum, hden, colors, xtitle, name, legTitle, sample, xmin = 0, ymin =0, xmax=50, ymax=1.2):
+    if( not (len(hnum) == len(hden)) or (not (len(hnum) > len(colors)))):
+        print("Error in plotStackedEffAndRatio - arrays are incompatible.")
+        return
+    
+    heff = {}
+    for i in range(len(hnum)):
+        heff[i] = ROOT.TGraphAsymmErrors()
+        heff[i].BayesDivide(hnum[i],hden[i])
+
+        heff[i].SetLineColor(colors[i])
+        heff[i].SetLineWidth(2)
+        heff[i].SetMarkerSize(0.8)
+        heff[i].SetMarkerStyle(20)
+        heff[i].SetMarkerColor(colors[i])
+
+    leg = ROOT.TLegend(0.5, 0.8, 0.9, 0.9)
+    for i in range(len(heff)):    
+        leg.AddEntry(heff[i], legTitle[i] ,"p")
+
+    c = ROOT.TCanvas('c', '', 600, 800)
+    pad1 = ROOT.TPad(("pad1","pad1",0,0.3,1,1)
+    pad1.SetBottomMargin(0)
+    pad1.Draw()
+    pad1.cd()
+    fr = c.DrawFrame(xmin, ymin, xmax, ymax)
+    fr.GetYaxis().SetTitle('Eff')
+    fr.GetYaxis().SetTitleSize(0.05)
+    fr.GetYaxis().SetTitleOffset(0.7)
+    fr.GetYaxis().SetLabelSize(0.03)
+    fr.GetXaxis().SetTitle(xtitle)
+    fr.GetXaxis().SetTitleSize(0.05)
+    fr.GetXaxis().SetTitleOffset(0.9)
+    fr.GetXaxis().SetLabelSize(0.03)
+    for i in range(len(heff)):
+        heff[i].Draw("P,SAME")
+    leg.Draw("SAME")
+
+    pad2 = ROOT.TPad("pad2","pad2",0,0,1,0.3)
+    pad2.SetTopMargin(0)
+    pad2.Draw()
+    pad2.cd()
+
+    
+    TPad *pad1 = new TPad("pad1","pad1",0,0.3,1,1);
+    pad1->SetBottomMargin(0);
+    pad1->Draw();
+    pad1->cd();
+    h1->DrawCopy();
+    h2->Draw("same");
+    c1->cd();
+    TPad *pad2 = new TPad("pad2","pad2",0,0,1,0.3);
+    pad2->SetTopMargin(0);
+    pad2->Draw();
+    pad2->cd();
+    h1->Sumw2();
+    h1->SetStats(0);
+    h1->Divide(h2);
+    h1->SetMarkerStyle(21);
+    h1->Draw("ep");
+    c1->cd();
+    c.SaveAs("RecoFixPlots/"+sample+"/"+name+".png")
+    c.Close()
+'''
+
 
 
 
@@ -242,33 +309,37 @@ if("CommonReco" == channel or "All" == channel):
 
     h_pass = {}
     h_total = {}
-    colors = [ROOT.kBlue,ROOT.kBlack,ROOT.kRed,ROOT.kOrange]
-    legTitle = ["Reco fixed ele","Reco ele","matched isoTrack","Reco photon"]
+    colors = [ROOT.kBlue,ROOT.kBlack,ROOT.kRed,ROOT.kOrange,ROOT.kGreen]
+    legTitle = ["Reco fixed ele","Reco ele","matched isoTrack","Reco photon","Reco pho + isoTrack"]
     h_pass[0] = f.Get("RecoFixedEleDzAbs_")
     h_pass[1] = f.Get("RecoEleDzAbs_")
     h_pass[2] = f.Get("IsoTrackDzAbs_")
     h_pass[3] = f.Get("RecoPhotonDzAbs_")
+    h_pass[4] = f.Get("RecoPhotonPlusIsoTrackDzAbs_")
 
     h_total[0] = f.Get("TrueEleDzAbs_")
     h_total[1] = f.Get("TrueEleDzAbs_")
     h_total[2] = f.Get("TrueEleDzAbs_")
-    h_total[3] = f.Get("TruePhotonDzAbs_")
+    h_total[3] = f.Get("TrueEleDzAbs_")
+    h_total[4] = f.Get("TrueEleDzAbs_")
 
     plotStackedEff(h_pass, h_total, colors, 'abs(dz) [cm]', 'electron_common_dzAbs-eff', legTitle, sample,0,0,20)
 
     h_pass = {}
     h_total = {}
-    colors = [ROOT.kBlue,ROOT.kBlack,ROOT.kRed,ROOT.kOrange]
-    legTitle = ["Reco fixed ele","Reco ele","matched isoTrack","Reco photon"]
+    colors = [ROOT.kBlue,ROOT.kBlack,ROOT.kRed,ROOT.kOrange,ROOT.kGreen]
+    legTitle = ["Reco fixed ele","Reco ele","matched isoTrack","Reco photon","Reco pho + isoTrack"]
     h_pass[0] = f.Get("RecoFixedEleDxyAbs_")
     h_pass[1] = f.Get("RecoEleDxyAbs_")
     h_pass[2] = f.Get("IsoTrackDxyAbs_")
     h_pass[3] = f.Get("RecoPhotonDxyAbs_")
+    h_pass[4] = f.Get("RecoPhotonPlusIsoTrackDxyAbs_")
 
     h_total[0] = f.Get("TrueEleDxyAbs_")
     h_total[1] = f.Get("TrueEleDxyAbs_")
     h_total[2] = f.Get("TrueEleDxyAbs_")
-    h_total[3] = f.Get("TruePhotonDxyAbs_")
+    h_total[3] = f.Get("TrueEleDxyAbs_")
+    h_total[4] = f.Get("TrueEleDzAbs_")
 
     plotStackedEff(h_pass, h_total, colors, 'abs(dxy) [cm]', 'electron_common_dxyAbs-eff', legTitle, sample,0,0,20)
 

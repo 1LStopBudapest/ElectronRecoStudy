@@ -71,8 +71,8 @@ ch = SampleChain(sample, options.startfile, options.nfiles, year).getchain()
 def dR(eta_gen, eta_reco, phi_gen, phi_reco):
     return math.sqrt((eta_gen-eta_reco)**2 + (phi_gen-phi_reco)**2 )
 
-def dRcut(dist):
-    return dist < 0.1
+def dRcut(dist, cut = 0.1):
+    return dist < cut
 
 def hasMomRecursive(i, pdgid, ch):
     if( ch.GenPart_genPartIdxMother[i] == -1):
@@ -167,6 +167,9 @@ histos['RecoPhotonDz'] = HistInfo(hname = 'RecoPhotonDz', sample = histext, binn
 histos['RecoPhotonDxyAbs'] = HistInfo(hname = 'RecoPhotonDxyAbs', sample = histext, binning = [40, 0, 20], histclass = ROOT.TH1F).make_hist()
 histos['RecoPhotonDzAbs'] = HistInfo(hname = 'RecoPhotonDzAbs', sample = histext, binning = [40, 0, 20], histclass = ROOT.TH1F).make_hist()
 
+histos['RecoPhotonPlusIsoTrackDxyAbs'] = HistInfo(hname = 'RecoPhotonPlusIsoTrackDxyAbs', sample = histext, binning = [40, 0, 20], histclass = ROOT.TH1F).make_hist()
+histos['RecoPhotonPlusIsoTrackDzAbs'] = HistInfo(hname = 'RecoPhotonPlusIsoTrackDzAbs', sample = histext, binning = [40, 0, 20], histclass = ROOT.TH1F).make_hist()
+
 effs = {}
 
 
@@ -248,7 +251,7 @@ for ientry in range(n_entries): #loop over events
                 if( dist0 < isodist):
                     isodist = dist0
                     idx0 = j
-            if( dRcut(isodist) ):
+            if( dRcut(isodist,0.2) ):
                 histos['IsoTrackPt'].Fill(ch.GenPart_pt[i])
                 histos['IsoTrackEta'].Fill(ch.GenPart_eta[i])
                 histos['IsoTrackVtxx'].Fill(ch.GenPart_vx[i])
@@ -265,7 +268,8 @@ for ientry in range(n_entries): #loop over events
                 # reco ele not found - check if there is a reco-ed photon
                 there_is_reco_photon = False
                 for j in range(ch.nPhoton):
-                    if( dR(ch.GenPart_eta[i], ch.Photon_eta[j], ch.GenPart_phi[i], ch.Photon_phi[j] ) < 0.1):
+                    dist0 = dR(ch.GenPart_eta[i], ch.Photon_eta[j], ch.GenPart_phi[i], ch.Photon_phi[j] )
+                    if( dRcut(dist0, 0.2) ):
                         there_is_reco_photon = True
                         break
                 
@@ -283,24 +287,11 @@ for ientry in range(n_entries): #loop over events
                         histos['RecoFixedEleDxyAbs'].Fill(abs(GenPart_dxy))
                         histos['RecoFixedEleDzAbs'].Fill( abs(GenPart_dz))
         
+                        # these are not filled when ele is found, just here:
+                        histos['RecoPhotonPlusIsoTrackDxyAbs'].Fill(abs(GenPart_dxy))
+                        histos['RecoPhotonPlusIsoTrackDzAbs'].Fill( abs(GenPart_dz))
 
-
-
-        # photon
-        if( abs(ch.GenPart_pdgId[i]) == 22 ): # true photon
-            GenPart_dxy = getdxy(i, ch)
-            GenPart_dz = getdz(i, ch)
-
-            histos['TruePhotonPt'].Fill(ch.GenPart_pt[i])
-            histos['TruePhotonEta'].Fill(ch.GenPart_eta[i])
-            histos['TruePhotonVtxx'].Fill(ch.GenPart_vx[i])
-            histos['TruePhotonVtxy'].Fill(ch.GenPart_vy[i])
-            histos['TruePhotonVtxz'].Fill(ch.GenPart_vz[i])
-            histos['TruePhotonDxy'].Fill( GenPart_dxy)
-            histos['TruePhotonDz'].Fill( GenPart_dz)
-            histos['TruePhotonDxyAbs'].Fill( abs(GenPart_dxy))
-            histos['TruePhotonDzAbs'].Fill( abs(GenPart_dz))
-            
+            # photon reco eff
             dist = 100000
             phoIdx = -1
             for j in range(ch.nPhoton):
@@ -308,7 +299,7 @@ for ientry in range(n_entries): #loop over events
                 if( dist0 < dist):
                     dist = dist0
                     phoIdx = j
-            if( dist < 0.1):
+            if( dRcut(dist,0.2) ):
                 histos['RecoPhotonPt'].Fill(ch.GenPart_pt[i])
                 histos['RecoPhotonEta'].Fill(ch.GenPart_eta[i])
                 histos['RecoPhotonVtxx'].Fill(ch.GenPart_vx[i])
