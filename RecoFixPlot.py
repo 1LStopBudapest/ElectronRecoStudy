@@ -11,6 +11,7 @@ def get_parser():
     argParser = argparse.ArgumentParser(description = "Argument parser")
     argParser.add_argument('--sample',           action='store',                     type=str,            default='FullSim100',                                help="Which sample?" )
     argParser.add_argument('--channel',           action='store',                     type=str,            default='All',                                help="Which particle" )
+    argParser.add_argument('--threaded',           action='store',                     type=str,            default='1',                                help="Was it the threaded code?" )
     return argParser
 
 options = get_parser().parse_args()
@@ -19,6 +20,32 @@ options = get_parser().parse_args()
 
 sample  = options.sample
 channel = options.channel
+bThreaded = options.threaded
+
+def Plot2D(h, dir, xmin = 0, ymin =0, xmax=1, ymax=1, drawOption="hist", islogz=False, canvasX=600, canvasY=800):
+    hname = h.GetName()
+    htitle = h.GetTitle()
+    sname = hname.replace(htitle+"_", "")
+    outputdirpath = os.path.join(dir,"2DPlots/final",sname)
+    if not os.path.exists(outputdirpath):
+        os.makedirs(outputdirpath)
+
+    leg = ROOT.TLegend(0.5, 0.85, 0.9, 0.9)
+    leg.AddEntry(h, sname ,"l")
+
+    #style2D(h, islogy)
+    
+    c = ROOT.TCanvas('c', '', canvasX, canvasY)
+    if(islogz):
+        c.SetLogz()
+    fr = c.DrawFrame(xmin, ymin, xmax, ymax)
+    c.cd()
+    h.Draw(drawOption)
+    leg.Draw("SAME")
+    c.SaveAs(outputdirpath+"/"+htitle+".png")
+    c.Close()
+
+
 
 def plotEff(hnum, hden, xtitle, name, legTitle, sample, xmin = 0, ymin =0, xmax=50, ymax=1.2):
     heff = ROOT.TGraphAsymmErrors()
@@ -49,7 +76,7 @@ def plotEff(hnum, hden, xtitle, name, legTitle, sample, xmin = 0, ymin =0, xmax=
     
 
 def plotStackedEff(hnum, hden, colors, xtitle, name, legTitle, sample, xmin = 0, ymin =0, xmax=50, ymax=1.2):
-    if( not (len(hnum) == len(hden)) or (not (len(hnum) == len(colors)))):
+    if( not (len(hnum) == len(hden)) or ( len(hnum) > len(colors))):
         print("Error in plotStackedEff - arrays are incompatible.")
         return
     
@@ -84,11 +111,123 @@ def plotStackedEff(hnum, hden, colors, xtitle, name, legTitle, sample, xmin = 0,
     c.SaveAs("RecoFixPlots/"+sample+"/"+name+".png")
     c.Close()
 
+def plotStackedEffAndRatio(hnum, hden, colors, xtitle, name, legTitle, sample, xmin = 0, ymin =-0.2, xmax=50, ymax=1.2, yratiomin = 0.5, yratiomax = 13):
+    if( not (len(hnum) == len(hden)) or ( len(hnum) > len(colors))):
+        print("Error in plotStackedEffAndRatio - arrays are incompatible.")
+        return
+    
+    heff = {}
+    for i in range(len(hnum)):
+        heff[i] = ROOT.TGraphAsymmErrors()
+        heff[i].BayesDivide(hnum[i],hden[i])
+
+        heff[i].SetLineColor(colors[i])
+        heff[i].SetLineWidth(2)
+        heff[i].SetMarkerSize(0.8)
+        heff[i].SetMarkerStyle(20)
+        heff[i].SetMarkerColor(colors[i])
+
+    # Use: 0 is reco fixed, 1 is simple reco
+    #xmax = max(ROOT.TMath.MaxElement(hnum.GetN(),hnum.GetX()), ROOT.TMath.MaxElement(hden.GetN(),hden.GetX()))
+    lxnum = [x for x in heff[0].GetX()]
+    lynum = [x for x in heff[0].GetY()]
+    lxden = [x for x in heff[1].GetX()]
+    lyden = [x for x in heff[1].GetY()]
 
 
+    Nbins = hnum[0].GetNbinsX()
+    binwidth = hnum[0].GetBinWidth(1)
+    #hRatio = ROOT.TH1F("hRatio", "hRatio", Nbins, 0, Nbins*binwidth)
+    hRatio = ROOT.TH1F("hRatio", "hRatio", Nbins, hnum[0].GetBin(1), hnum[0].GetBin(Nbins))
 
-f = ROOT.TFile.Open('root_files/RecoFix_Sample'+sample+'.root')
+    #print("New plot")
+    #print("binwidth: ",binwidth)
+    #print(lxnum)
+    #print(lxden)
 
+    for b in range(0, Nbins):
+        x = binwidth/2 + b*binwidth
+        #print("x is",x)
+        if x in lxnum:
+            id1 = lxnum.index(x)
+            tnum = lynum[id1]
+        else: tnum = -1.0
+        if x in lxden:
+            id1 = lxden.index(x)
+            tden = lyden[id1]
+        else: tden = -1.0
+        #ratio = -1.0 if (tnum==-1 or hden==-1 or tden==0) else tnum/tden 
+        ratio = -1.0 if (tnum==-1 or tden==0) else tnum/tden 
+        #print(tnum, tden, ratio)
+        hRatio.SetBinContent(b+1, ratio)
+
+
+    hRatio.GetYaxis().SetTitle("fixed / simple")
+    hRatio.GetYaxis().SetRangeUser(yratiomin,yratiomax)
+    hRatio.SetTitle("")
+    hRatio.SetStats(0)
+    hRatio.SetLineColor(ROOT.kRed)
+    hRatio.SetMarkerColor(ROOT.kRed)
+    hRatio.SetMarkerSize(0.8)
+    hRatio.SetMarkerStyle(20)
+    hRatio.GetYaxis().SetTitleSize(0.08)
+    hRatio.GetYaxis().SetTitleOffset(0.5)
+    hRatio.GetYaxis().SetLabelSize(0.07)
+    hRatio.GetXaxis().SetTitle(xtitle)
+    hRatio.GetXaxis().SetTitleSize(0.1)
+    hRatio.GetXaxis().SetTitleOffset(0.9)
+    hRatio.GetXaxis().SetLabelSize(0.07)
+
+    hRatioFrame = hRatio.Clone("RatioFrame")
+    for b in range(1, hRatioFrame.GetNbinsX() + 1):
+        hRatioFrame.SetBinContent(b, 1.0)
+    hRatioFrame.SetLineStyle(2)
+    hRatioFrame.SetLineWidth(2)
+    hRatioFrame.SetLineColor(ROOT.kGreen)
+
+
+    leg = ROOT.TLegend(0.5, 0.8, 0.9, 0.9)
+    for i in range(len(heff)):    
+        leg.AddEntry(heff[i], legTitle[i] ,"p")
+
+    c = ROOT.TCanvas('c', '', 600, 800)
+    p1 = ROOT.TPad("p1", "p1", 0, 0.3, 1, 1.0)
+    p1.SetBottomMargin(0) # Upper and lower plot are joined
+    p1.Draw()             # Draw the upper pad: p1
+    p1.cd()
+    fr = p1.DrawFrame(xmin, ymin, xmax, ymax)
+    #fr = p1.DrawFrame(0., 0.0, Nbins*binwidth, 1.2)
+    #fr = c.DrawFrame(xmin, ymin, xmax, ymax)
+    fr.GetYaxis().SetTitle('Eff')
+    fr.GetYaxis().SetTitleSize(0.05)
+    fr.GetYaxis().SetTitleOffset(0.7)
+    fr.GetYaxis().SetLabelSize(0.03)
+    fr.GetXaxis().SetTitle(xtitle)
+    fr.GetXaxis().SetTitleSize(0.05)
+    fr.GetXaxis().SetTitleOffset(0.9)
+    fr.GetXaxis().SetLabelSize(0.03)
+    for i in range(len(heff)):
+        heff[i].Draw("P,SAME")
+    leg.Draw("SAME")
+    #hRatio.Draw("SAME")
+    #for i in range(1, hRatioFrame.GetNbinsX() + 1):
+    #    print(hRatio.GetBinContent(i))
+
+    c.cd()
+    p2 = ROOT.TPad("p2", "p2", 0, 0.01, 1, 0.3)
+    p2.SetTopMargin(0)
+    p2.SetBottomMargin(0.2)
+    p2.Draw()
+    p2.cd()
+    hRatio.Draw("P")
+    hRatioFrame.Draw("HISTsame")
+    c.SaveAs("RecoFixPlots/"+sample+"/"+name+".png")
+    c.Close()
+
+if(bThreaded):
+    f = ROOT.TFile.Open('root_files/RecoFixThreadedSTACK_Sample'+sample+'.root')
+else:   
+    f = ROOT.TFile.Open('root_files/RecoFix_Sample'+sample+'.root')
 
 if ("Electron" == channel or "All" == channel):
     h_pass = f.Get("RecoElePt_")
@@ -117,11 +256,12 @@ if ("Electron" == channel or "All" == channel):
 
 if("Photon" == channel or "All" == channel):
     h_pass = f.Get("RecoPhotonPt_")
-    h_total = f.Get("TruePhotonPt_")
+    h_total = f.Get("TrueElePt_")
+    Plot1D(h_pass ,'./RecoFixPlots')
     plotEff(h_pass, h_total, 'photon p_{T} [GeV]', 'photon_pT-eff', "Reco photon", sample)
 
     h_pass = f.Get("RecoPhotonEta_")
-    h_total = f.Get("TruePhotonEta_")
+    h_total = f.Get("TrueEleEta_")
     plotEff(h_pass, h_total, 'photon eta [GeV]', 'photon_eta-eff', "Reco photon", sample,-3,0,3)
 if("IsoTrack" == channel or "All" == channel):
     h_pass = f.Get("IsoTrackPt_")
@@ -142,31 +282,38 @@ if("RecoFix" == channel or "All" == channel):
 if("CommonReco" == channel or "All" == channel):
     h_pass = {}
     h_total = {}
-    colors = [ROOT.kBlue,ROOT.kBlack,ROOT.kRed]
-    legTitle = ["Reco fixed ele","Reco ele","matched isoTrack"]
+    colors = [ROOT.kBlue,ROOT.kBlack,ROOT.kRed,ROOT.kOrange,ROOT.kGreen]
+    legTitle = ["Reco fixed ele","Reco ele","matched isoTrack","Reco photon","Reco pho + isoTrack"]
     h_pass[0] = f.Get("RecoFixedElePt_")
     h_pass[1] = f.Get("RecoElePt_")
     h_pass[2] = f.Get("IsoTrackPt_")
+    h_pass[3] = f.Get("RecoPhotonPt_")
+    #h_pass[4] = f.Get("RecoPhotonPlusIsoTrackPt_")
 
     h_total[0] = f.Get("TrueElePt_")
     h_total[1] = f.Get("TrueElePt_")
     h_total[2] = f.Get("TrueElePt_")
+    h_total[3] = f.Get("TrueElePt_")
+    #h_total[4] = f.Get("TrueElePt_")
 
-    plotStackedEff(h_pass, h_total, colors, 'p_{T} [GeV]', 'electron_common_pT-eff', legTitle, sample,0,0,50)
+    plotStackedEffAndRatio(h_pass, h_total, colors, 'p_{T} [GeV]', 'electron_common_pT-eff', legTitle, sample,0,-0.05,50,1.2,0.5,2)
 
     h_pass = {}
     h_total = {}
-    colors = [ROOT.kBlue,ROOT.kBlack,ROOT.kRed]
-    legTitle = ["Reco fixed ele","Reco ele","matched isoTrack"]
+    legTitle = ["Reco fixed ele","Reco ele","matched isoTrack","Reco photon","Reco pho + isoTrack"]
     h_pass[0] = f.Get("RecoFixedEleEta_")
     h_pass[1] = f.Get("RecoEleEta_")
     h_pass[2] = f.Get("IsoTrackEta_")
+    h_pass[3] = f.Get("RecoPhotonEta_")
+    #h_pass[4] = f.Get("RecoPhotonPlusIsoTrackEta_")
 
     h_total[0] = f.Get("TrueEleEta_")
     h_total[1] = f.Get("TrueEleEta_")
     h_total[2] = f.Get("TrueEleEta_")
+    h_total[3] = f.Get("TrueEleEta_")
+    #h_total[4] = f.Get("TrueEleEta_")
 
-    plotStackedEff(h_pass, h_total, colors, 'p_{T} [GeV]', 'electron_common_eta-eff', legTitle, sample,-3,0,3)
+    plotStackedEffAndRatio(h_pass, h_total, colors, 'p_{T} [GeV]', 'electron_common_eta-eff', legTitle, sample,-3,-0.05,3,1.2,0.5,2)
 
     h_pass = {}
     h_total = {}
@@ -242,36 +389,89 @@ if("CommonReco" == channel or "All" == channel):
 
     h_pass = {}
     h_total = {}
-    colors = [ROOT.kBlue,ROOT.kBlack,ROOT.kRed,ROOT.kOrange]
-    legTitle = ["Reco fixed ele","Reco ele","matched isoTrack","Reco photon"]
+    colors = [ROOT.kBlue,ROOT.kBlack,ROOT.kRed,ROOT.kOrange,ROOT.kGreen]
+    legTitle = ["Reco fixed ele","Reco ele","matched isoTrack","Reco photon","Reco pho + isoTrack"]
     h_pass[0] = f.Get("RecoFixedEleDzAbs_")
     h_pass[1] = f.Get("RecoEleDzAbs_")
     h_pass[2] = f.Get("IsoTrackDzAbs_")
     h_pass[3] = f.Get("RecoPhotonDzAbs_")
+    h_pass[4] = f.Get("RecoPhotonPlusIsoTrackDzAbs_")
 
     h_total[0] = f.Get("TrueEleDzAbs_")
     h_total[1] = f.Get("TrueEleDzAbs_")
     h_total[2] = f.Get("TrueEleDzAbs_")
-    h_total[3] = f.Get("TruePhotonDzAbs_")
+    h_total[3] = f.Get("TrueEleDzAbs_")
+    h_total[4] = f.Get("TrueEleDzAbs_")
 
-    plotStackedEff(h_pass, h_total, colors, 'abs(dz) [cm]', 'electron_common_dzAbs-eff', legTitle, sample,0,0,20)
+    plotStackedEffAndRatio(h_pass, h_total, colors, 'abs(dz) [cm]', 'electron_common_dzAbs-eff', legTitle, sample,0,-0.05,20,1.2,0.5,2)
 
     h_pass = {}
     h_total = {}
-    colors = [ROOT.kBlue,ROOT.kBlack,ROOT.kRed,ROOT.kOrange]
-    legTitle = ["Reco fixed ele","Reco ele","matched isoTrack","Reco photon"]
+    colors = [ROOT.kBlue,ROOT.kBlack,ROOT.kRed,ROOT.kOrange,ROOT.kGreen]
+    legTitle = ["Reco fixed ele","Reco ele","matched isoTrack","Reco photon","Reco pho + isoTrack"]
     h_pass[0] = f.Get("RecoFixedEleDxyAbs_")
     h_pass[1] = f.Get("RecoEleDxyAbs_")
     h_pass[2] = f.Get("IsoTrackDxyAbs_")
     h_pass[3] = f.Get("RecoPhotonDxyAbs_")
+    h_pass[4] = f.Get("RecoPhotonPlusIsoTrackDxyAbs_")
 
     h_total[0] = f.Get("TrueEleDxyAbs_")
     h_total[1] = f.Get("TrueEleDxyAbs_")
     h_total[2] = f.Get("TrueEleDxyAbs_")
-    h_total[3] = f.Get("TruePhotonDxyAbs_")
+    h_total[3] = f.Get("TrueEleDxyAbs_")
+    h_total[4] = f.Get("TrueEleDzAbs_")
 
-    plotStackedEff(h_pass, h_total, colors, 'abs(dxy) [cm]', 'electron_common_dxyAbs-eff', legTitle, sample,0,0,20)
+    plotStackedEffAndRatio(h_pass, h_total, colors, 'abs(dxy) [cm]', 'electron_common_dxyAbs-eff', legTitle, sample,0,-0.05,20)
 
+
+    Plot2D( f.Get("dRControlPlot2D_") ,'./RecoFixPlots',xmin = 0, ymin =0, xmax=1, ymax=1, drawOption="COLZ",islogz=True)
+
+
+    h_pass = {}
+    h_total = {}
+    legTitle = ["Reco fixed ele","Reco ele"]
+    h_pass[0] = f.Get("RejectBackgroundRecoFixPt_")
+    h_pass[1] = f.Get("RejectBackgroundPt_")
+
+    h_total[0] = f.Get("TrueBackgroundPt_")
+    h_total[1] = f.Get("TrueBackgroundPt_")
+
+    plotStackedEffAndRatio(h_pass, h_total, colors, 'p_{T} [GeV]', 'background_common_pT', legTitle, sample,0,-0.05,50,1.2,0,1.2)
+
+    h_pass = {}
+    h_total = {}
+    legTitle = ["Reco fixed ele","Reco ele"]
+    h_pass[0] = f.Get("RejectBackgroundRecoFixEta_")
+    h_pass[1] = f.Get("RejectBackgroundEta_")
+
+    h_total[0] = f.Get("TrueBackgroundEta_")
+    h_total[1] = f.Get("TrueBackgroundEta_")
+
+
+    plotStackedEffAndRatio(h_pass, h_total, colors, '\eta ', 'background_common_eta', legTitle, sample,-3,-0.05,3,1.2,0,1.2)
+    #plotStackedEff(h_pass, h_total, colors, '\eta ', 'background_common_eta', legTitle, sample,-3,0,3)
+
+    h_pass = {}
+    h_total = {}
+    legTitle = ["Reco fixed ele","Reco ele"]
+    h_pass[0] = f.Get("RejectBackgroundRecoFixDxyAbs_")
+    h_pass[1] = f.Get("RejectBackgroundDxyAbs_")
+
+    h_total[0] = f.Get("TrueBackgroundDxyAbs_")
+    h_total[1] = f.Get("TrueBackgroundDxyAbs_")
+
+    plotStackedEffAndRatio(h_pass, h_total, colors, 'abs(dxy) [cm] ', 'background_common_dxyAbs', legTitle, sample, 0,-0.05,20,1.2,0,1.2)
+
+    h_pass = {}
+    h_total = {}
+    legTitle = ["Reco fixed ele","Reco ele"]
+    h_pass[0] = f.Get("RejectBackgroundRecoFixDzAbs_")
+    h_pass[1] = f.Get("RejectBackgroundDzAbs_")
+
+    h_total[0] = f.Get("TrueBackgroundDzAbs_")
+    h_total[1] = f.Get("TrueBackgroundDzAbs_")
+
+    plotStackedEffAndRatio(h_pass, h_total, colors, 'abs(dz) [cm]', 'background_common_dzAbs', legTitle, sample, 0,-0.05,20,1.2,0,1.2)
 
 if("testing" == channel):
     h = f.Get("momID_")

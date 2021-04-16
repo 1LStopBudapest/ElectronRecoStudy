@@ -58,21 +58,21 @@ else:
     DataLumi = SampleChain.luminosity_2018
 
 
-# csak fullsimre
-if 'FullSim0' != samples and 'FullSim5' != samples and 'FullSim10' != samples and 'FullSim100' != samples and 'FullSim100m' != samples and 'FullSim100m2' != samples:
-    print("Sorry for now, may be expanded later.")
-    quit()
-
 sample = samples
 
 # Make samplechain
 ch = SampleChain(sample, options.startfile, options.nfiles, year).getchain()
 
 def dR(eta_gen, eta_reco, phi_gen, phi_reco):
-    return math.sqrt((eta_gen-eta_reco)**2 + (phi_gen-phi_reco)**2 )
+    phipart = phi_gen-phi_reco
+    if( phipart < -math.pi):
+        phipart += 2*math.pi
+    elif( phipart > math.pi):
+        phipart -= 2*math.pi
+    return math.sqrt((eta_gen-eta_reco)**2 + (phipart)**2 )
 
-def dRcut(dist):
-    return dist < 0.1
+def dRcut(dist, cut = 0.1):
+    return dist < cut
 
 def hasMomRecursive(i, pdgid, ch):
     if( ch.GenPart_genPartIdxMother[i] == -1):
@@ -167,7 +167,27 @@ histos['RecoPhotonDz'] = HistInfo(hname = 'RecoPhotonDz', sample = histext, binn
 histos['RecoPhotonDxyAbs'] = HistInfo(hname = 'RecoPhotonDxyAbs', sample = histext, binning = [40, 0, 20], histclass = ROOT.TH1F).make_hist()
 histos['RecoPhotonDzAbs'] = HistInfo(hname = 'RecoPhotonDzAbs', sample = histext, binning = [40, 0, 20], histclass = ROOT.TH1F).make_hist()
 
-effs = {}
+histos['RecoPhotonPlusIsoTrackDxyAbs'] = HistInfo(hname = 'RecoPhotonPlusIsoTrackDxyAbs', sample = histext, binning = [40, 0, 20], histclass = ROOT.TH1F).make_hist()
+histos['RecoPhotonPlusIsoTrackDzAbs'] = HistInfo(hname = 'RecoPhotonPlusIsoTrackDzAbs', sample = histext, binning = [40, 0, 20], histclass = ROOT.TH1F).make_hist()
+
+histos['dRControlPlot2D'] = HistInfo(hname = 'dRControlPlot2D', sample = histext, binning = [[40, 0, 2],[40, 0, 2]], histclass = ROOT.TH2F).make_hist2D()
+ 
+
+
+histos['TrueBackgroundPt'] = HistInfo(hname = 'TrueBackgroundPt', sample = histext, binning = [50, 0, 100], histclass = ROOT.TH1F).make_hist()
+histos['TrueBackgroundEta'] = HistInfo(hname = 'TrueBackgroundEta', sample = histext, binning = [30, -3, 3], histclass = ROOT.TH1F).make_hist()
+histos['TrueBackgroundDxyAbs'] = HistInfo(hname = 'TrueBackgroundDxyAbs', sample = histext, binning = [40, 0, 20], histclass = ROOT.TH1F).make_hist()
+histos['TrueBackgroundDzAbs'] = HistInfo(hname = 'TrueBackgroundDzAbs', sample = histext, binning = [40, 0, 20], histclass = ROOT.TH1F).make_hist()
+
+histos['RejectBackgroundPt'] = HistInfo(hname = 'RejectBackgroundPt', sample = histext, binning = [50, 0, 100], histclass = ROOT.TH1F).make_hist()
+histos['RejectBackgroundEta'] = HistInfo(hname = 'RejectBackgroundEta', sample = histext, binning = [30, -3, 3], histclass = ROOT.TH1F).make_hist()
+histos['RejectBackgroundDxyAbs'] = HistInfo(hname = 'RejectBackgroundDxyAbs', sample = histext, binning = [40, 0, 20], histclass = ROOT.TH1F).make_hist()
+histos['RejectBackgroundDzAbs'] = HistInfo(hname = 'RejectBackgroundDzAbs', sample = histext, binning = [40, 0, 20], histclass = ROOT.TH1F).make_hist()
+
+histos['RejectBackgroundRecoFixPt'] = HistInfo(hname = 'RejectBackgroundRecoFixPt', sample = histext, binning = [50, 0, 100], histclass = ROOT.TH1F).make_hist()
+histos['RejectBackgroundRecoFixEta'] = HistInfo(hname = 'RejectBackgroundRecoFixEta', sample = histext, binning = [30, -3, 3], histclass = ROOT.TH1F).make_hist()
+histos['RejectBackgroundRecoFixDxyAbs'] = HistInfo(hname = 'RejectBackgroundRecoFixDxyAbs', sample = histext, binning = [40, 0, 20], histclass = ROOT.TH1F).make_hist()
+histos['RejectBackgroundRecoFixDzAbs'] = HistInfo(hname = 'RejectBackgroundRecoFixDzAbs', sample = histext, binning = [40, 0, 20], histclass = ROOT.TH1F).make_hist()
 
 
 n_entries = ch.GetEntries() #num entries in tree
@@ -181,13 +201,14 @@ nevtcut = n_entries -1 if nEvents == - 1 else nEvents - 1
 print("Calculating efficiencies with and without recofix.")
 for ientry in range(n_entries): #loop over events
     if ientry > nevtcut: break
-    if ientry % (nevtcut/10)==0 : print 'processing ', ientry,'th event'
+    if ientry % (nevtcut/10)==0 : print( 'processing ', ientry,'th event')
     ch.GetEntry(ientry)
 
 
     for i in range(ch.nGenPart):
 
         # electron, pt eta cuts, status 1, with a stop mother somewhere in mother history
+        # FIXME: none
         if( abs(ch.GenPart_pdgId[i]) == 11 and ch.GenPart_pt[i] >= 5 and abs(ch.GenPart_eta[i]) <= 2.5 and ch.GenPart_status[i] == 1 and hasMomRecursive(i, 1000006, ch)):
 
             GenPart_dxy = getdxy(i, ch)
@@ -217,6 +238,7 @@ for ientry in range(n_entries): #loop over events
                     eledist = dist0
                     idx0 = j
             if( dRcut(eledist) ):
+                eleIdx = idx0
                 histos['RecoElePt'].Fill(ch.GenPart_pt[i])
                 histos['RecoEleEta'].Fill(ch.GenPart_eta[i])
                 histos['RecoEleVtxx'].Fill(ch.GenPart_vx[i])
@@ -237,7 +259,6 @@ for ientry in range(n_entries): #loop over events
                 histos['RecoFixedEleDxyAbs'].Fill(abs(GenPart_dxy))
                 histos['RecoFixedEleDzAbs'].Fill( abs(GenPart_dz))
 
-                eleIdx = idx0
 
             # match isotracks
             isodist = 100000
@@ -248,7 +269,7 @@ for ientry in range(n_entries): #loop over events
                 if( dist0 < isodist):
                     isodist = dist0
                     idx0 = j
-            if( dRcut(isodist) ):
+            if( dRcut(isodist,0.2) ):
                 histos['IsoTrackPt'].Fill(ch.GenPart_pt[i])
                 histos['IsoTrackEta'].Fill(ch.GenPart_eta[i])
                 histos['IsoTrackVtxx'].Fill(ch.GenPart_vx[i])
@@ -265,7 +286,8 @@ for ientry in range(n_entries): #loop over events
                 # reco ele not found - check if there is a reco-ed photon
                 there_is_reco_photon = False
                 for j in range(ch.nPhoton):
-                    if( dR(ch.GenPart_eta[i], ch.Photon_eta[j], ch.GenPart_phi[i], ch.Photon_phi[j] ) < 0.1):
+                    dist0 = dR(ch.GenPart_eta[i], ch.Photon_eta[j], ch.GenPart_phi[i], ch.Photon_phi[j] )
+                    if( dRcut(dist0, 0.2) ):
                         there_is_reco_photon = True
                         break
                 
@@ -283,32 +305,19 @@ for ientry in range(n_entries): #loop over events
                         histos['RecoFixedEleDxyAbs'].Fill(abs(GenPart_dxy))
                         histos['RecoFixedEleDzAbs'].Fill( abs(GenPart_dz))
         
+                        # these are not filled when ele is found, just here:
+                        histos['RecoPhotonPlusIsoTrackDxyAbs'].Fill(abs(GenPart_dxy))
+                        histos['RecoPhotonPlusIsoTrackDzAbs'].Fill( abs(GenPart_dz))
 
-
-
-        # photon
-        if( abs(ch.GenPart_pdgId[i]) == 22 ): # true photon
-            GenPart_dxy = getdxy(i, ch)
-            GenPart_dz = getdz(i, ch)
-
-            histos['TruePhotonPt'].Fill(ch.GenPart_pt[i])
-            histos['TruePhotonEta'].Fill(ch.GenPart_eta[i])
-            histos['TruePhotonVtxx'].Fill(ch.GenPart_vx[i])
-            histos['TruePhotonVtxy'].Fill(ch.GenPart_vy[i])
-            histos['TruePhotonVtxz'].Fill(ch.GenPart_vz[i])
-            histos['TruePhotonDxy'].Fill( GenPart_dxy)
-            histos['TruePhotonDz'].Fill( GenPart_dz)
-            histos['TruePhotonDxyAbs'].Fill( abs(GenPart_dxy))
-            histos['TruePhotonDzAbs'].Fill( abs(GenPart_dz))
-            
-            dist = 100000
+            # photon reco eff
+            phodist = 100000
             phoIdx = -1
             for j in range(ch.nPhoton):
                 dist0 = dR(ch.GenPart_eta[i], ch.Photon_eta[j], ch.GenPart_phi[i], ch.Photon_phi[j] ) 
-                if( dist0 < dist):
-                    dist = dist0
+                if( dist0 < phodist):
+                    phodist = dist0
                     phoIdx = j
-            if( dist < 0.1):
+            if( dRcut(phodist,0.2) ):
                 histos['RecoPhotonPt'].Fill(ch.GenPart_pt[i])
                 histos['RecoPhotonEta'].Fill(ch.GenPart_eta[i])
                 histos['RecoPhotonVtxx'].Fill(ch.GenPart_vx[i])
@@ -319,58 +328,102 @@ for ientry in range(n_entries): #loop over events
                 histos['RecoPhotonDxyAbs'].Fill( abs(GenPart_dxy))
                 histos['RecoPhotonDzAbs'].Fill( abs(GenPart_dz))
 
+            histos['dRControlPlot2D'].Fill(isodist,phodist)
+
+
+    # background calculation
+    # create background
+    background = []
+    for iTR in range(ch.nIsoTrack):
+        min_dRele = 1000
+        minIEle = -1
+        min_dRbackgnd = 1000
+        minIBackgnd = -1
+
+        for iMC in range(ch.nGenPart):
+            temp_dR = dR(ch.GenPart_eta[iMC], ch.IsoTrack_eta[iTR], ch.GenPart_phi[iMC], ch.IsoTrack_phi[iTR])
+            if abs(ch.GenPart_pdgId[iMC]) == 11:
+                if( temp_dR < min_dRele):
+                    min_dRele = temp_dR
+                    minIEle = iMC
+            else:
+                if(temp_dR < min_dRbackgnd):
+                    min_dRbackgnd = temp_dR
+                    minIBackgnd = iMC
+
+        # FIXME: Ide nem kellene dR cut?????
+        #if( minIBackgnd != -1):
+        if( dRcut(min_dRbackgnd,0.2)):
+            if(not dRcut(min_dRele,0.2) ):
+                background.append(minIBackgnd)
+
+                # this is the denom:
+                histos['TrueBackgroundPt'].Fill( ch.GenPart_pt[minIBackgnd])
+                histos['TrueBackgroundEta'].Fill( ch.GenPart_eta[minIBackgnd])
+                histos['TrueBackgroundDxyAbs'].Fill( abs(getdxy(minIBackgnd, ch)))
+                histos['TrueBackgroundDzAbs'].Fill( abs(getdz(minIBackgnd, ch)))
+
+
+    # To get background rejection: redo the matching, but work on the true background as input sample:
+
+    for iBK in range(len(background)):
+
+        i = background[iBK]
+        
+        eledist = 100000
+        eleIdx = -1
+        idx0 = -1
+        for j in range(ch.nElectron):
+
+            # remove isolation
+            #eleVID(ch.Electron_vidNestedWPBitmap[j], 0, removedCuts=['pfRelIso03_all'])
+
+            dist0 = dR(ch.GenPart_eta[i], ch.Electron_eta[j], ch.GenPart_phi[i], ch.Electron_phi[j] ) 
+            if( dist0 < eledist):
+                eledist = dist0
+                idx0 = j
+        # not dRcut: background REJECTION efficiency
+        if( not dRcut(eledist) ):
+            histos['RejectBackgroundPt'].Fill( ch.GenPart_pt[i])
+            histos['RejectBackgroundEta'].Fill( ch.GenPart_eta[i])
+            histos['RejectBackgroundDxyAbs'].Fill( abs(getdxy(i, ch)))
+            histos['RejectBackgroundDzAbs'].Fill( abs(getdz(i, ch)))
+        else:
+            eleIdx = idx0 
+
+
+        # attempt reco fix
+        if( eleIdx == -1 ):
+            # match isotracks
+            isodist = 100000
+            isoIdx = -1
+            idx0 = -1
+            for j in range(ch.nIsoTrack):
+                dist0 = dR(ch.GenPart_eta[i], ch.IsoTrack_eta[j], ch.GenPart_phi[i], ch.IsoTrack_phi[j] ) 
+                if( dist0 < isodist):
+                    isodist = dist0
+                    idx0 = j
+            if( dRcut(isodist,0.2) ):
+                isoIdx = idx0
+
+            # reco ele not found - check if there is a reco-ed photon
+            there_is_reco_photon = False
+            for j in range(ch.nPhoton):
+                dist0 = dR(ch.GenPart_eta[i], ch.Photon_eta[j], ch.GenPart_phi[i], ch.Photon_phi[j] )
+                if( dRcut(dist0, 0.2) ):
+                    there_is_reco_photon = True
+                    break
+            
+            if( not there_is_reco_photon or isoIdx == -1):
+                histos['RejectBackgroundRecoFixPt'].Fill( ch.GenPart_pt[i])
+                histos['RejectBackgroundRecoFixEta'].Fill( ch.GenPart_eta[i])
+                histos['RejectBackgroundRecoFixDxyAbs'].Fill( abs(getdxy(i, ch)))
+                histos['RejectBackgroundRecoFixDzAbs'].Fill( abs(getdz(i, ch)))
+
+
+
+
 
 
 # Save histos:
 hfile.Write()
-
-'''
-Legacy code
-# RECO FIXING #
-
-# for true ele, find ele -> efficiency for ele reco:
-# TODO: 100 or 10 mm instead
-print("Attempting reco fix.")
-print 'Running over total events: ', nevtcut+1
-for ientry in range(n_entries): #loop over events
-    if ientry > nevtcut: break
-    if ientry % (nevtcut/10)==0 : print 'processing ', ientry,'th event'
-    ch.GetEntry(ientry)
-
-    for i in range(ch.nGenPart):
-        if( abs(ch.GenPart_pdgId[i]) == 11 ): # true ele
-            # check if there is a reco ele:
-            there_is_reco_ele = False
-            for j in range(ch.nElectron):
-                if( dR(ch.GenPart_eta[i], ch.Electron_eta[j], ch.GenPart_phi[i], ch.Electron_phi[j] ) < 0.1):
-                    there_is_reco_ele = True
-                    break
-        
-            if( there_is_reco_ele):
-                continue
-            
-            # not found - check if there is a reco-ed photon
-
-            there_is_reco_photon = False
-            for j in range(ch.nPhoton):
-                if( dR(ch.GenPart_eta[i], ch.Photon_eta[j], ch.GenPart_phi[i], ch.Photon_phi[j] ) < 0.1):
-                    there_is_reco_photon = True
-                    break
-            
-            if( not there_is_reco_photon):
-                continue
-
-            # Recover efficiency by looking for photon, but this has big background
-            # Check if there is an isotrack for true ele -> then the isotrack is the detected ele
-            dist = 100000
-            IsoTrackIdx = -1
-            for j in range(ch.nIsoTrack):
-                dist0 = dR(ch.GenPart_eta[i], ch.IsoTrack_eta[j], ch.GenPart_phi[i], ch.IsoTrack_phi[j])
-                if( dist0 < dist):
-                    dist = dist0
-                    IsoTrackIdx = j
-            
-            if(dist < 0.1):
-                print("Found one!")
-'''
-
