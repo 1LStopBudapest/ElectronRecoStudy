@@ -15,6 +15,7 @@ from Sample.SampleChain import SampleChain
 from Helper.VarCalc import *
 from Helper.PlotHelper import *
 from Sample.FileList_2016 import samples as samples_2016
+from Sample.FileList_Fake_2016 import samples as samples_2016_fake
 
 
 def get_parser():
@@ -31,6 +32,7 @@ def get_parser():
     argParser.add_argument('--channel',           action='store',                    type=str,            default='Electron',                                       help="Which lepton?" )
     argParser.add_argument('--region',            action='store',                    type=str,            default='mesurement',                                     help="Which lepton?" )    
     argParser.add_argument('--pJobs',             action='store',                    type=bool,            default=False,                                           help="using GPU parallel program or not" )
+    argParser.add_argument('--fake',             action='store',                    type=bool,            default=False,                                           help="sample or fake" )
 
     return argParser
 
@@ -59,15 +61,27 @@ lepOpt = 'Ele' if 'Electron' in channel else 'Mu'
 
 DataLumi = 1.0
 
-if year==2016:
-    samplelist = samples_2016
-    DataLumi = SampleChain.luminosity_2016
-elif year==2017:
-    samplelist = samples_2017
-    DataLumi = SampleChain.luminosity_2017
+if not options.fake:
+    if year==2016:
+        samplelist = samples_2016
+        DataLumi = SampleChain.luminosity_2016
+    elif year==2017:
+        samplelist = samples_2017
+        DataLumi = SampleChain.luminosity_2017
+    else:
+        samplelist = samples_2018
+        DataLumi = SampleChain.luminosity_2018
 else:
-    samplelist = samples_2018
-    DataLumi = SampleChain.luminosity_2018
+    if year==2016:
+        samplelist = samples_2016_fake
+        DataLumi = SampleChain.luminosity_2016
+    elif year==2017:
+        samplelist = samples_2017_fake
+        DataLumi = SampleChain.luminosity_2017
+    else:
+        samplelist = samples_2018_fake
+        DataLumi = SampleChain.luminosity_2018
+
 
 sample = samples
 
@@ -97,16 +111,37 @@ def extrapolateTrack(pt, eta, phi, charge, x0, y0, z0):
     xC = x0/100.0 + R*cos(phi - charge * 3.14159265359/2.0)
     yC = y0/100.0 + R*sin(phi - charge * 3.14159265359/2.0)
 
-    # Barrel can be hit, selecting from barrel and endcap
-    if(1.29*1.29 < 4 * R * R):
-        Z_ECAL = z0/100.0 + R * math.sinh(eta) *(math.acos(1 - 1.29*1.29 / (2*R*R)));
+
+    # calculate x,y intersection of track
+    a = - yC / xC
+    rb = 110.0 / 100.0
+    RC2 = xC**2 + yC**2
+    b = (RC2 - R**2 + rb**2) / (2*xC)
+
+    qa = a**2 + 1
+    qb = 2*a*b
+    qc = b**2 - rb
+    disc = b**2 - 4*qa*qc
+
+    if( disc > 0):
+        # barrel can be hit, solution exists
+        y1 = (-qb + sqrt(disc)) / (2*qa)
+        y2 = (-qb - sqrt(disc)) / (2*qa)
+        x1 = b + y1*a
+        x2 = b + y2*a
+
+        # try first:
+        y = y2
+
+        #Z_ECAL = z0/100.0 + R * math.sinh(eta) *(math.acos(1 - 1.29*1.29 / (2*R*R)));
+        Z_ECAL = z0/100.0 - (math.asin((y-yC)/R) - phi - charge*3.14159265359/2.0) * (R*sinh(eta) / charge)
 
         if(Z_ECAL > 2.1):
             Z_ECAL = 2.1
         if(Z_ECAL < -2.1):
             Z_ECAL = -2.1
     else:
-        # Barrel cannot be hit, endcap is hit
+        # Barrel cannot be hit, endcap is hit (electron spirals out)
         if(eta > 0):
             Z_ECAL = 2.1
         else:
@@ -128,7 +163,7 @@ def extrapolateTrack(pt, eta, phi, charge, x0, y0, z0):
 
 
 def GetGenPartSC(i, ch):
-    return extrapolateTrack(ch.GenPart_pt[i], ch.GenPart_eta[i], ch.GenPart_phi[i], math.copysign(1,ch.GenPart_pdgId[i]), ch.GenPart_vx[i], ch.GenPart_vy[i], ch.GenPart_vz[i])
+    return extrapolateTrack(ch.GenPart_pt[i], ch.GenPart_eta[i], ch.GenPart_phi[i], -1*math.copysign(1,ch.GenPart_pdgId[i]), ch.GenPart_vx[i], ch.GenPart_vy[i], ch.GenPart_vz[i])
 
 # here, but not used for efficiency, no need to always recalculate the SC
 # maybe use decorator in the future?
@@ -167,9 +202,9 @@ def RecoAndRecoFix(threadID, it0, it1, nevtcut, ch_common):
     histos = {}
     histos['TrueElePt'] = HistInfo(hname = 'TrueElePt', sample = histext, binning = ptBinning, binopt = 'var', histclass = ROOT.TH1F).make_hist()
     histos['TrueEleEta'] = HistInfo(hname = 'TrueEleEta', sample = histext, binning = [30, -3, 3], histclass = ROOT.TH1F).make_hist()
-    histos['TrueEleVtxx'] = HistInfo(hname = 'TrueEleVtxx', sample = histext, binning = [30, -3, 3], histclass = ROOT.TH1F).make_hist()
-    histos['TrueEleVtxy'] = HistInfo(hname = 'TrueEleVtxy', sample = histext, binning = [30, -3, 3], histclass = ROOT.TH1F).make_hist()
-    histos['TrueEleVtxz'] = HistInfo(hname = 'TrueEleVtxz', sample = histext, binning = [30, -3, 3], histclass = ROOT.TH1F).make_hist()
+    histos['TrueEleVtxx'] = HistInfo(hname = 'TrueEleVtxx', sample = histext, binning = [40, -1, 1], histclass = ROOT.TH1F).make_hist()
+    histos['TrueEleVtxy'] = HistInfo(hname = 'TrueEleVtxy', sample = histext, binning = [40, -1, 1], histclass = ROOT.TH1F).make_hist()
+    histos['TrueEleVtxz'] = HistInfo(hname = 'TrueEleVtxz', sample = histext, binning = [50, -50, 50], histclass = ROOT.TH1F).make_hist()
     histos['TrueEleDxy'] = HistInfo(hname = 'TrueEleDxy', sample = histext, binning = [40, -6, 6], histclass = ROOT.TH1F).make_hist()
     histos['TrueEleDz'] = HistInfo(hname = 'TrueEleDz', sample = histext, binning = [40, -6, 6], histclass = ROOT.TH1F).make_hist()
     histos['TrueEleDxyAbs'] = HistInfo(hname = 'TrueEleDxyAbs', sample = histext, binning = [40, 0, 20], histclass = ROOT.TH1F).make_hist()
@@ -274,8 +309,8 @@ def RecoAndRecoFix(threadID, it0, it1, nevtcut, ch_common):
 
 
             # electron, pt eta cuts, status 1, with a stop mother somewhere in mother history
-            # FIXME: none
-            if( abs(ch.GenPart_pdgId[i]) == 11 and ch.GenPart_pt[i] >= 5 and abs(ch.GenPart_eta[i]) <= 2.5 and ch.GenPart_status[i] == 1 and hasMomRecursive(i, 1000006, ch)):
+            # FIXME: TESTING NOW
+            if( abs(ch.GenPart_pdgId[i]) == 11 and ch.GenPart_pt[i] >= 20 and abs(ch.GenPart_eta[i]) <= 1 and ch.GenPart_status[i] == 1 and hasMomRecursive(i, 1000006, ch) and abs(ch.GenPart_vx[i]) < 0.2 ):
 
                 GenPart_dxy = getdxy(i, ch)
                 GenPart_dz = getdz(i, ch)
@@ -352,16 +387,20 @@ def RecoAndRecoFix(threadID, it0, it1, nevtcut, ch_common):
                     # when matching ele with photon, use extrapolated track:
                     etaSC_i, phiSC_i = GetGenPartSC(i, ch)
 
-                    print >> interpolate_log, "True eta, phi: ", ch.GenPart_eta[i], "", ch.GenPart_phi[i]
-                    print >> interpolate_log, "Inte eta, phi: ", etaSC_i, " ", phiSC_i
-                    print >> interpolate_log, " "
+                    print >> interpolate_log, "Gen Ele P_T, x, y, z, charge: ", ch.GenPart_pt[i],  ch.GenPart_vx[i], ch.GenPart_vy[i], ch.GenPart_vz[i], -1*math.copysign(1,ch.GenPart_pdgId[i])
+                    print >> interpolate_log, "Gen Ele  eta, phi:           ", ch.GenPart_eta[i], ch.GenPart_phi[i]
+                    print >> interpolate_log, "Interpol eta, phi:           ", etaSC_i, phiSC_i
+                    print >> interpolate_log, "Delta eta, Delta phi :       ", ch.GenPart_eta[i] - etaSC_i, ch.GenPart_phi[i] - phiSC_i
                     there_is_reco_photon = False
                     for j in range(ch.nPhoton):
                         dist0 = dR(etaSC_i, ch.Photon_eta[j], phiSC_i, ch.Photon_phi[j] )
+                        print >> interpolate_log, "  Photoncand-"+str(j)+" eta, phi, pt: ", ch.Photon_eta[j], ch.Photon_phi[j], ch.Photon_pt[j]
                         if( dRcut(dist0, 0.2) ):
                             there_is_reco_photon = True
                             break
                     
+                    print >> interpolate_log, "Photon found: ", there_is_reco_photon
+                    print >> interpolate_log, " "
                     if( there_is_reco_photon):
                         # Recover efficiency by looking for photon, but this has big background
                         # Check if there is an isotrack for true ele -> then the isotrack is the detected ele
@@ -526,9 +565,9 @@ hfile = ROOT.TFile( 'root_files/RecoFixThreadedSTACK_Sample'+sample+'.root', 'RE
 savehistos = {}
 savehistos['TrueElePt'] = HistInfo(hname = 'TrueElePt', sample = histext, binning = ptBinning, binopt = 'var', histclass = ROOT.TH1F).make_hist()
 savehistos['TrueEleEta'] = HistInfo(hname = 'TrueEleEta', sample = histext, binning = [30, -3, 3], histclass = ROOT.TH1F).make_hist()
-savehistos['TrueEleVtxx'] = HistInfo(hname = 'TrueEleVtxx', sample = histext, binning = [30, -3, 3], histclass = ROOT.TH1F).make_hist()
-savehistos['TrueEleVtxy'] = HistInfo(hname = 'TrueEleVtxy', sample = histext, binning = [30, -3, 3], histclass = ROOT.TH1F).make_hist()
-savehistos['TrueEleVtxz'] = HistInfo(hname = 'TrueEleVtxz', sample = histext, binning = [30, -3, 3], histclass = ROOT.TH1F).make_hist()
+savehistos['TrueEleVtxx'] = HistInfo(hname = 'TrueEleVtxx', sample = histext, binning = [40, -1, 1], histclass = ROOT.TH1F).make_hist()
+savehistos['TrueEleVtxy'] = HistInfo(hname = 'TrueEleVtxy', sample = histext, binning = [40, -1, 1], histclass = ROOT.TH1F).make_hist()
+savehistos['TrueEleVtxz'] = HistInfo(hname = 'TrueEleVtxz', sample = histext, binning = [50, -50, 50], histclass = ROOT.TH1F).make_hist()
 savehistos['TrueEleDxy'] = HistInfo(hname = 'TrueEleDxy', sample = histext, binning = [40, -6, 6], histclass = ROOT.TH1F).make_hist()
 savehistos['TrueEleDz'] = HistInfo(hname = 'TrueEleDz', sample = histext, binning = [40, -6, 6], histclass = ROOT.TH1F).make_hist()
 savehistos['TrueEleDxyAbs'] = HistInfo(hname = 'TrueEleDxyAbs', sample = histext, binning = [40, 0, 20], histclass = ROOT.TH1F).make_hist()
