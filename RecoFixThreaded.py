@@ -107,8 +107,8 @@ def extrapolateTrack(pt, eta, phi, charge, x0, y0, z0):
 
     qa = a**2 + 1
     qb = 2*a*b
-    qc = b**2 - rb
-    disc = b**2 - 4*qa*qc
+    qc = b**2 - rb**2
+    disc = qb**2 - 4*qa*qc
 
     y,x,y_other,x_other = 0,0,0,0
     if( disc > 0):
