@@ -15,7 +15,6 @@ from Sample.SampleChain import SampleChain
 from Helper.VarCalc import *
 from Helper.PlotHelper import *
 from Sample.FileList_2016 import samples as samples_2016
-from Sample.FileList_Fake_2016 import samples as samples_2016_fake
 
 
 def get_parser():
@@ -23,7 +22,7 @@ def get_parser():
     '''
     import argparse
     argParser = argparse.ArgumentParser(description = "Argument parser")
-    argParser.add_argument('--sample',           action='store',                     type=str,            default='FullSim100',                                help="Which sample?" )
+    argParser.add_argument('--sample',           action='store',                     type=str,            default='UL17_Full99mm',                                help="Which sample?" )
     argParser.add_argument('--year',             action='store',                     type=int,            default=2016,                                             help="Which year?" )
     argParser.add_argument('--startfile',        action='store',                     type=int,            default=0,                                                help="start from which root file like 0th or 10th etc?" )
     argParser.add_argument('--nfiles',           action='store',                     type=int,            default=-1,                                               help="No of files to run. -1 means all files" )
@@ -32,7 +31,6 @@ def get_parser():
     argParser.add_argument('--channel',           action='store',                    type=str,            default='Electron',                                       help="Which lepton?" )
     argParser.add_argument('--region',            action='store',                    type=str,            default='mesurement',                                     help="Which lepton?" )    
     argParser.add_argument('--pJobs',             action='store',                    type=bool,            default=False,                                           help="using GPU parallel program or not" )
-    argParser.add_argument('--fake',             action='store',                    type=bool,            default=False,                                           help="sample or fake" )
 
     return argParser
 
@@ -61,26 +59,15 @@ lepOpt = 'Ele' if 'Electron' in channel else 'Mu'
 
 DataLumi = 1.0
 
-if not options.fake:
-    if year==2016:
-        samplelist = samples_2016
-        DataLumi = SampleChain.luminosity_2016
-    elif year==2017:
-        samplelist = samples_2017
-        DataLumi = SampleChain.luminosity_2017
-    else:
-        samplelist = samples_2018
-        DataLumi = SampleChain.luminosity_2018
+if year==2016:
+    samplelist = samples_2016
+    DataLumi = SampleChain.luminosity_2016
+elif year==2017:
+    samplelist = samples_2017
+    DataLumi = SampleChain.luminosity_2017
 else:
-    if year==2016:
-        samplelist = samples_2016_fake
-        DataLumi = SampleChain.luminosity_2016
-    elif year==2017:
-        samplelist = samples_2017_fake
-        DataLumi = SampleChain.luminosity_2017
-    else:
-        samplelist = samples_2018_fake
-        DataLumi = SampleChain.luminosity_2018
+    samplelist = samples_2018
+    DataLumi = SampleChain.luminosity_2018
 
 
 sample = samples
@@ -108,13 +95,13 @@ def hasMomRecursive(i, pdgid, ch):
 
 def extrapolateTrack(pt, eta, phi, charge, x0, y0, z0):
     R = pt / (0.3 * 3.8)
-    xC = x0/100.0 + R*cos(phi - charge * 3.14159265359/2.0)
-    yC = y0/100.0 + R*sin(phi - charge * 3.14159265359/2.0)
+    xC = x0/100.0 + R* math.cos(phi - charge * 3.14159265359/2.0)
+    yC = y0/100.0 + R* math.sin(phi - charge * 3.14159265359/2.0)
 
 
     # calculate x,y intersection of track
-    a = - yC / xC
-    rb = 110.0 / 100.0
+    a = (-1* yC) / xC
+    rb = 129.0 / 100.0
     RC2 = xC**2 + yC**2
     b = (RC2 - R**2 + rb**2) / (2*xC)
 
@@ -123,18 +110,27 @@ def extrapolateTrack(pt, eta, phi, charge, x0, y0, z0):
     qc = b**2 - rb
     disc = b**2 - 4*qa*qc
 
+    y,x,y_other,x_other = 0,0,0,0
     if( disc > 0):
         # barrel can be hit, solution exists
-        y1 = (-qb + sqrt(disc)) / (2*qa)
-        y2 = (-qb - sqrt(disc)) / (2*qa)
+        y1 = (-qb + math.sqrt(disc)) / (2*qa)
+        y2 = (-qb - math.sqrt(disc)) / (2*qa)
         x1 = b + y1*a
         x2 = b + y2*a
 
-        # try first:
-        y = y2
+        if(phi > 0):
+            y = y1
+            x = x1
+            y_other = y2
+            x_other = x2
+        else:
+            y = y2
+            x = x2
+            y_other = y1
+            x_other = x1
 
         #Z_ECAL = z0/100.0 + R * math.sinh(eta) *(math.acos(1 - 1.29*1.29 / (2*R*R)));
-        Z_ECAL = z0/100.0 - (math.asin((y-yC)/R) - phi - charge*3.14159265359/2.0) * (R*sinh(eta) / charge)
+        Z_ECAL = z0/100.0 - (math.asin((y-yC)/R) - phi - charge*3.14159265359/2.0) * (R*math.sinh(eta) / charge)
 
         if(Z_ECAL > 2.1):
             Z_ECAL = 2.1
@@ -147,19 +143,25 @@ def extrapolateTrack(pt, eta, phi, charge, x0, y0, z0):
         else:
             Z_ECAL = -2.1
 
-    X_ECAL = xC + R * cos(-charge * (Z_ECAL-z0/100.0)/(R * math.sinh(eta)) + charge * 3.14159265359/2.0)
-    Y_ECAL = yC + R * sin(-charge * (Z_ECAL-z0/100.0)/(R * math.sinh(eta)) + charge * 3.14159265359/2.0)
+    X_ECAL = xC + R * math.cos(-charge * (Z_ECAL-z0/100.0)/(R * math.sinh(eta)) + charge * 3.14159265359/2.0)
+    Y_ECAL = yC + R * math.sin(-charge * (Z_ECAL-z0/100.0)/(R * math.sinh(eta)) + charge * 3.14159265359/2.0)
   
     D_ECAL = math.sqrt(X_ECAL*X_ECAL+Y_ECAL*Y_ECAL)
 
     etaSC = math.asinh(Z_ECAL/D_ECAL)
     if(Y_ECAL > 0):
-        phiSC = cos(X_ECAL/D_ECAL)
+        phiSC = math.cos(X_ECAL/D_ECAL)
     else:
-        phiSC = -1.0 * cos(X_ECAL/D_ECAL)
+        phiSC = -1.0 * math.cos(X_ECAL/D_ECAL)
 
 
-    return etaSC, phiSC
+    return etaSC, phiSC, x, y, x_other, y_other
+
+def phiToXY(phi):
+    rb = 129.0 / 100.0
+    x = rb * math.cos(phi)
+    y = rb * math.sin(phi)
+    return x,y
 
 
 def GetGenPartSC(i, ch):
@@ -310,7 +312,7 @@ def RecoAndRecoFix(threadID, it0, it1, nevtcut, ch_common):
 
             # electron, pt eta cuts, status 1, with a stop mother somewhere in mother history
             # FIXME: TESTING NOW
-            if( abs(ch.GenPart_pdgId[i]) == 11 and ch.GenPart_pt[i] >= 20 and abs(ch.GenPart_eta[i]) <= 1 and ch.GenPart_status[i] == 1 and hasMomRecursive(i, 1000006, ch) and abs(ch.GenPart_vx[i]) < 0.2 ):
+            if( abs(ch.GenPart_pdgId[i]) == 11 and ch.GenPart_pt[i] >= 15  and abs(ch.GenPart_eta[i]) <= 1 and ch.GenPart_status[i] == 1 and hasMomRecursive(i, 1000006, ch) and abs(ch.GenPart_vx[i]) < 0.2 and abs(ch.GenPart_vy[i]) < 0.2):
 
                 GenPart_dxy = getdxy(i, ch)
                 GenPart_dz = getdz(i, ch)
@@ -358,6 +360,22 @@ def RecoAndRecoFix(threadID, it0, it1, nevtcut, ch_common):
                     Fill1D(histos['RecoFixedEleDzAbs'], abs(GenPart_dz))
 
 
+                    etaSC_i, phiSC_i, calc_x, calc_y, calc2_x, calc2_y = GetGenPartSC(i, ch)
+                    tangent_x, tangent_y = phiToXY(ch.GenPart_phi[i])
+                    sc_x, sc_y = phiToXY(phiSC_i)
+                    eSCx, eSCy = phiToXY(ch.Electron_phi[eleIdx])
+                    print >> interpolate_log, "RECO ELE FOUND"
+                    print >> interpolate_log, "Gen Ele P_T, x, y, z, charge:     ", ch.GenPart_pt[i],  ch.GenPart_vx[i], ch.GenPart_vy[i], ch.GenPart_vz[i], -1*math.copysign(1,ch.GenPart_pdgId[i])
+                    print >> interpolate_log, "Gen Ele  eta, phi:                ", ch.GenPart_eta[i], ch.GenPart_phi[i]
+                    print >> interpolate_log, "SC eta, phi:                      ", etaSC_i, phiSC_i
+                    print >> interpolate_log, "Delta eta, Delta phi :            ", ch.GenPart_eta[i] - etaSC_i, ch.GenPart_phi[i] - phiSC_i
+                    print >> interpolate_log, "Tangent crossing   (x,y), phi:    ", tangent_x, tangent_y, ch.GenPart_phi[i]
+                    print >> interpolate_log, "Interpl cross SEL (x1,y1), phi:   ", calc_x, calc_y, math.atan2(calc_y, calc_x) 
+                    print >> interpolate_log, "Interpl cross other (x2,y2), phi: ", calc2_x, calc2_y, math.atan2(calc2_y, calc2_x) 
+                    print >> interpolate_log, "  RecoEle x y     (xSC,ySC),phi:  ", eSCx, eSCy, ch.Electron_phi[eleIdx]
+                    print >> interpolate_log, " "
+
+
                 # match isotracks
                 isodist = 100000
                 isoIdx = -1
@@ -385,22 +403,33 @@ def RecoAndRecoFix(threadID, it0, it1, nevtcut, ch_common):
                     # reco ele not found - check if there is a reco-ed photon
 
                     # when matching ele with photon, use extrapolated track:
-                    etaSC_i, phiSC_i = GetGenPartSC(i, ch)
+                    etaSC_i, phiSC_i, calc_x, calc_y, calc2_x, calc2_y = GetGenPartSC(i, ch)
+                    tangent_x, tangent_y = phiToXY(ch.GenPart_phi[i])
+                    sc_x, sc_y = phiToXY(phiSC_i)
+                    if( ch.nPhoton > 0):
+                        print >> interpolate_log, "Gen Ele P_T, x, y, z, charge:     ", ch.GenPart_pt[i],  ch.GenPart_vx[i], ch.GenPart_vy[i], ch.GenPart_vz[i], -1*math.copysign(1,ch.GenPart_pdgId[i])
+                        print >> interpolate_log, "Gen Ele  eta, phi:                ", ch.GenPart_eta[i], ch.GenPart_phi[i]
+                        print >> interpolate_log, "SC eta, phi:                      ", etaSC_i, phiSC_i
+                        print >> interpolate_log, "Delta eta, Delta phi :            ", ch.GenPart_eta[i] - etaSC_i, ch.GenPart_phi[i] - phiSC_i
+                        print >> interpolate_log, "Tangent crossing   (x,y), phi:    ", tangent_x, tangent_y, ch.GenPart_phi[i]
+                        print >> interpolate_log, "Interpl cross SEL (x1,y1), phi:   ", calc_x, calc_y, math.atan2(calc_y, calc_x) 
+                        print >> interpolate_log, "Interpl cross other (x2,y2), phi: ", calc2_x, calc2_y, math.atan2(calc2_y, calc2_x) 
 
-                    print >> interpolate_log, "Gen Ele P_T, x, y, z, charge: ", ch.GenPart_pt[i],  ch.GenPart_vx[i], ch.GenPart_vy[i], ch.GenPart_vz[i], -1*math.copysign(1,ch.GenPart_pdgId[i])
-                    print >> interpolate_log, "Gen Ele  eta, phi:           ", ch.GenPart_eta[i], ch.GenPart_phi[i]
-                    print >> interpolate_log, "Interpol eta, phi:           ", etaSC_i, phiSC_i
-                    print >> interpolate_log, "Delta eta, Delta phi :       ", ch.GenPart_eta[i] - etaSC_i, ch.GenPart_phi[i] - phiSC_i
+                    #print >> interpolate_log, "Supercluster   (yECAL,xECAL):", sc_y, sc_x
                     there_is_reco_photon = False
                     for j in range(ch.nPhoton):
                         dist0 = dR(etaSC_i, ch.Photon_eta[j], phiSC_i, ch.Photon_phi[j] )
-                        print >> interpolate_log, "  Photoncand-"+str(j)+" eta, phi, pt: ", ch.Photon_eta[j], ch.Photon_phi[j], ch.Photon_pt[j]
+                        pSCx, pSCy = phiToXY(ch.Photon_phi[j])
+                        #print >> interpolate_log, "  Photoncand-"+str(j)+" eta, phi, pt: ", ch.Photon_eta[j], ch.Photon_phi[j], ch.Photon_pt[j]
+                        print >> interpolate_log, "  Photocand-"+str(j)+" (xSC,ySC),phi:      ", pSCx, pSCy, ch.Photon_phi[j]
                         if( dRcut(dist0, 0.2) ):
                             there_is_reco_photon = True
                             break
                     
-                    print >> interpolate_log, "Photon found: ", there_is_reco_photon
-                    print >> interpolate_log, " "
+                    if( ch.nPhoton > 0):
+                        print >> interpolate_log, "Photon found: ", there_is_reco_photon
+                        print >> interpolate_log, " "
+
                     if( there_is_reco_photon):
                         # Recover efficiency by looking for photon, but this has big background
                         # Check if there is an isotrack for true ele -> then the isotrack is the detected ele
