@@ -31,6 +31,7 @@ def get_parser():
     argParser.add_argument('--channel',           action='store',                    type=str,            default='Electron',                                       help="Which lepton?" )
     argParser.add_argument('--region',            action='store',                    type=str,            default='mesurement',                                     help="Which lepton?" )    
     argParser.add_argument('--pJobs',             action='store',                    type=bool,            default=False,                                           help="using GPU parallel program or not" )
+    argParser.add_argument('--vertex',             action='store',                    type=str,            default="True",                                           help="is there vertex info" )
 
     return argParser
 
@@ -52,7 +53,12 @@ samples  = options.sample
 channel = options.channel
 nEvents = options.nevents
 year = options.year
+if( options.vertex == "True"):
+    usevertex = True
+else:
+    usevertex = False
 
+print usevertex
 isData = True if ('Run' in samples or 'Data' in samples) else False
 
 lepOpt = 'Ele' if 'Electron' in channel else 'Mu'
@@ -94,9 +100,10 @@ def hasMomRecursive(i, pdgid, ch):
 
 
 def extrapolateTrack(pt, eta, phi, charge, x0, y0, z0):
-    R = pt / (0.3 * 3.8)
-    xC = x0/100.0 + R* math.cos(phi - charge * 3.14159265359/2.0)
-    yC = y0/100.0 + R* math.sin(phi - charge * 3.14159265359/2.0)
+    #R = pt / (0.3 * 3.8)
+    R = pt / (0.3 * 3.8 * charge)
+    xC = x0/100.0 + R* math.cos(phi + charge * 3.14159265359/2.0)
+    yC = y0/100.0 + R* math.sin(phi + charge * 3.14159265359/2.0)
 
 
     # calculate x,y intersection of track
@@ -204,6 +211,7 @@ def RecoAndRecoFix(threadID, it0, it1, nevtcut, ch_common):
     histos = {}
     histos['TrueElePt'] = HistInfo(hname = 'TrueElePt', sample = histext, binning = ptBinning, binopt = 'var', histclass = ROOT.TH1F).make_hist()
     histos['TrueEleEta'] = HistInfo(hname = 'TrueEleEta', sample = histext, binning = [30, -3, 3], histclass = ROOT.TH1F).make_hist()
+    histos['TrueElePhi'] = HistInfo(hname = 'TrueElePhi', sample = histext, binning = [30, -4, 4], histclass = ROOT.TH1F).make_hist()
     histos['TrueEleVtxx'] = HistInfo(hname = 'TrueEleVtxx', sample = histext, binning = [40, -1, 1], histclass = ROOT.TH1F).make_hist()
     histos['TrueEleVtxy'] = HistInfo(hname = 'TrueEleVtxy', sample = histext, binning = [40, -1, 1], histclass = ROOT.TH1F).make_hist()
     histos['TrueEleVtxz'] = HistInfo(hname = 'TrueEleVtxz', sample = histext, binning = [50, -50, 50], histclass = ROOT.TH1F).make_hist()
@@ -214,6 +222,7 @@ def RecoAndRecoFix(threadID, it0, it1, nevtcut, ch_common):
 
     histos['RecoElePt'] = HistInfo(hname = 'RecoElePt', sample = histext, binning = ptBinning, binopt = 'var', histclass = ROOT.TH1F).make_hist()
     histos['RecoEleEta'] = HistInfo(hname = 'RecoEleEta', sample = histext, binning = [30, -3, 3], histclass = ROOT.TH1F).make_hist()
+    histos['RecoElePhi'] = HistInfo(hname = 'RecoElePhi', sample = histext, binning = [30, -4, 4], histclass = ROOT.TH1F).make_hist()
     histos['RecoEleVtxx'] = HistInfo(hname = 'RecoEleVtxx', sample = histext, binning = [30, -3, 3], histclass = ROOT.TH1F).make_hist()
     histos['RecoEleVtxy'] = HistInfo(hname = 'RecoEleVtxy', sample = histext, binning = [30, -3, 3], histclass = ROOT.TH1F).make_hist()
     histos['RecoEleVtxz'] = HistInfo(hname = 'RecoEleVtxz', sample = histext, binning = [30, -3, 3], histclass = ROOT.TH1F).make_hist()
@@ -224,6 +233,7 @@ def RecoAndRecoFix(threadID, it0, it1, nevtcut, ch_common):
 
     histos['IsoTrackPt'] = HistInfo(hname = 'IsoTrackPt', sample = histext, binning = ptBinning, binopt = 'var', histclass = ROOT.TH1F).make_hist()
     histos['IsoTrackEta'] = HistInfo(hname = 'IsoTrackEta', sample = histext, binning = [30, -3, 3], histclass = ROOT.TH1F).make_hist()
+    histos['IsoTrackPhi'] = HistInfo(hname = 'IsoTrackPhi', sample = histext, binning = [30, -4, 4], histclass = ROOT.TH1F).make_hist()
     histos['IsoTrackVtxx'] = HistInfo(hname = 'IsoTrackVtxx', sample = histext, binning = [30, -3, 3], histclass = ROOT.TH1F).make_hist()
     histos['IsoTrackVtxy'] = HistInfo(hname = 'IsoTrackVtxy', sample = histext, binning = [30, -3, 3], histclass = ROOT.TH1F).make_hist()
     histos['IsoTrackVtxz'] = HistInfo(hname = 'IsoTrackVtxz', sample = histext, binning = [30, -3, 3], histclass = ROOT.TH1F).make_hist()
@@ -234,6 +244,7 @@ def RecoAndRecoFix(threadID, it0, it1, nevtcut, ch_common):
 
     histos['RecoFixedElePt'] = HistInfo(hname = 'RecoFixedElePt', sample = histext, binning = ptBinning, binopt = 'var', histclass = ROOT.TH1F).make_hist()
     histos['RecoFixedEleEta'] = HistInfo(hname = 'RecoFixedEleEta', sample = histext, binning = [30, -3, 3], histclass = ROOT.TH1F).make_hist()
+    histos['RecoFixedElePhi'] = HistInfo(hname = 'RecoFixedElePhi', sample = histext, binning = [30, -4, 4], histclass = ROOT.TH1F).make_hist()
     histos['RecoFixedEleVtxx'] = HistInfo(hname = 'RecoFixedEleVtxx', sample = histext, binning = [30, -3, 3], histclass = ROOT.TH1F).make_hist()
     histos['RecoFixedEleVtxy'] = HistInfo(hname = 'RecoFixedEleVtxy', sample = histext, binning = [30, -3, 3], histclass = ROOT.TH1F).make_hist()
     histos['RecoFixedEleVtxz'] = HistInfo(hname = 'RecoFixedEleVtxz', sample = histext, binning = [30, -3, 3], histclass = ROOT.TH1F).make_hist()
@@ -244,6 +255,7 @@ def RecoAndRecoFix(threadID, it0, it1, nevtcut, ch_common):
 
     histos['TruePhotonPt'] = HistInfo(hname = 'TruePhotonPt', sample = histext, binning = ptBinning, binopt = 'var', histclass = ROOT.TH1F).make_hist()
     histos['TruePhotonEta'] = HistInfo(hname = 'TruePhotonEta', sample = histext, binning = [30, -3, 3], histclass = ROOT.TH1F).make_hist()
+    histos['TruePhotonPhi'] = HistInfo(hname = 'TruePhotonPhi', sample = histext, binning = [30, -4, 4], histclass = ROOT.TH1F).make_hist()
     histos['TruePhotonVtxx'] = HistInfo(hname = 'TruePhotonVtxx', sample = histext, binning = [30, -3, 3], histclass = ROOT.TH1F).make_hist()
     histos['TruePhotonVtxy'] = HistInfo(hname = 'TruePhotonVtxy', sample = histext, binning = [30, -3, 3], histclass = ROOT.TH1F).make_hist()
     histos['TruePhotonVtxz'] = HistInfo(hname = 'TruePhotonVtxz', sample = histext, binning = [30, -3, 3], histclass = ROOT.TH1F).make_hist()
@@ -254,6 +266,7 @@ def RecoAndRecoFix(threadID, it0, it1, nevtcut, ch_common):
 
     histos['RecoPhotonPt'] = HistInfo(hname = 'RecoPhotonPt', sample = histext, binning = ptBinning, binopt = 'var', histclass = ROOT.TH1F).make_hist()
     histos['RecoPhotonEta'] = HistInfo(hname = 'RecoPhotonEta', sample = histext, binning = [30, -3, 3], histclass = ROOT.TH1F).make_hist()
+    histos['RecoPhotonPhi'] = HistInfo(hname = 'RecoPhotonPhi', sample = histext, binning = [30, -4, 4], histclass = ROOT.TH1F).make_hist()
     histos['RecoPhotonVtxx'] = HistInfo(hname = 'RecoPhotonVtxx', sample = histext, binning = [30, -3, 3], histclass = ROOT.TH1F).make_hist()
     histos['RecoPhotonVtxy'] = HistInfo(hname = 'RecoPhotonVtxy', sample = histext, binning = [30, -3, 3], histclass = ROOT.TH1F).make_hist()
     histos['RecoPhotonVtxz'] = HistInfo(hname = 'RecoPhotonVtxz', sample = histext, binning = [30, -3, 3], histclass = ROOT.TH1F).make_hist()
@@ -262,6 +275,10 @@ def RecoAndRecoFix(threadID, it0, it1, nevtcut, ch_common):
     histos['RecoPhotonDxyAbs'] = HistInfo(hname = 'RecoPhotonDxyAbs', sample = histext, binning = [40, 0, 20], histclass = ROOT.TH1F).make_hist()
     histos['RecoPhotonDzAbs'] = HistInfo(hname = 'RecoPhotonDzAbs', sample = histext, binning = [40, 0, 20], histclass = ROOT.TH1F).make_hist()
 
+
+    histos['RecoPhotonPlusIsoTrackPt'] = HistInfo(hname = 'RecoPhotonPlusIsoTrackPt', sample = histext, binning = ptBinning, binopt = 'var', histclass = ROOT.TH1F).make_hist()
+    histos['RecoPhotonPlusIsoTrackEta'] = HistInfo(hname = 'RecoPhotonPlusIsoTrackEta', sample = histext, binning = [30, -3, 3], histclass = ROOT.TH1F).make_hist()
+    histos['RecoPhotonPlusIsoTrackPhi'] = HistInfo(hname = 'RecoPhotonPlusIsoTrackPhi', sample = histext, binning = [30, -4, 4], histclass = ROOT.TH1F).make_hist()
     histos['RecoPhotonPlusIsoTrackDxyAbs'] = HistInfo(hname = 'RecoPhotonPlusIsoTrackDxyAbs', sample = histext, binning = [40, 0, 20], histclass = ROOT.TH1F).make_hist()
     histos['RecoPhotonPlusIsoTrackDzAbs'] = HistInfo(hname = 'RecoPhotonPlusIsoTrackDzAbs', sample = histext, binning = [40, 0, 20], histclass = ROOT.TH1F).make_hist()
 
@@ -269,16 +286,19 @@ def RecoAndRecoFix(threadID, it0, it1, nevtcut, ch_common):
 
     histos['TrueBackgroundPt'] = HistInfo(hname = 'TrueBackgroundPt', sample = histext, binning = ptBinning, binopt = 'var', histclass = ROOT.TH1F).make_hist()
     histos['TrueBackgroundEta'] = HistInfo(hname = 'TrueBackgroundEta', sample = histext, binning = [30, -3, 3], histclass = ROOT.TH1F).make_hist()
+    histos['TrueBackgroundPhi'] = HistInfo(hname = 'TrueBackgroundPhi', sample = histext, binning = [30, -4, 4], histclass = ROOT.TH1F).make_hist()
     histos['TrueBackgroundDxyAbs'] = HistInfo(hname = 'TrueBackgroundDxyAbs', sample = histext, binning = [40, 0, 20], histclass = ROOT.TH1F).make_hist()
     histos['TrueBackgroundDzAbs'] = HistInfo(hname = 'TrueBackgroundDzAbs', sample = histext, binning = [40, 0, 20], histclass = ROOT.TH1F).make_hist()
 
     histos['RejectBackgroundPt'] = HistInfo(hname = 'RejectBackgroundPt', sample = histext, binning = ptBinning, binopt = 'var', histclass = ROOT.TH1F).make_hist()
     histos['RejectBackgroundEta'] = HistInfo(hname = 'RejectBackgroundEta', sample = histext, binning = [30, -3, 3], histclass = ROOT.TH1F).make_hist()
+    histos['RejectBackgroundPhi'] = HistInfo(hname = 'RejectBackgroundPhi', sample = histext, binning = [30, -4, 4], histclass = ROOT.TH1F).make_hist()
     histos['RejectBackgroundDxyAbs'] = HistInfo(hname = 'RejectBackgroundDxyAbs', sample = histext, binning = [40, 0, 20], histclass = ROOT.TH1F).make_hist()
     histos['RejectBackgroundDzAbs'] = HistInfo(hname = 'RejectBackgroundDzAbs', sample = histext, binning = [40, 0, 20], histclass = ROOT.TH1F).make_hist()
 
     histos['RejectBackgroundRecoFixPt'] = HistInfo(hname = 'RejectBackgroundRecoFixPt', sample = histext, binning = ptBinning, binopt = 'var', histclass = ROOT.TH1F).make_hist()
     histos['RejectBackgroundRecoFixEta'] = HistInfo(hname = 'RejectBackgroundRecoFixEta', sample = histext, binning = [30, -3, 3], histclass = ROOT.TH1F).make_hist()
+    histos['RejectBackgroundRecoFixPhi'] = HistInfo(hname = 'RejectBackgroundRecoFixPhi', sample = histext, binning = [30, -4, 4], histclass = ROOT.TH1F).make_hist()
     histos['RejectBackgroundRecoFixDxyAbs'] = HistInfo(hname = 'RejectBackgroundRecoFixDxyAbs', sample = histext, binning = [40, 0, 20], histclass = ROOT.TH1F).make_hist()
     histos['RejectBackgroundRecoFixDzAbs'] = HistInfo(hname = 'RejectBackgroundRecoFixDzAbs', sample = histext, binning = [40, 0, 20], histclass = ROOT.TH1F).make_hist()
 
@@ -311,21 +331,26 @@ def RecoAndRecoFix(threadID, it0, it1, nevtcut, ch_common):
 
 
             # electron, pt eta cuts, status 1, with a stop mother somewhere in mother history
-            # FIXME: TESTING NOW
-            if( abs(ch.GenPart_pdgId[i]) == 11 and ch.GenPart_pt[i] >= 15  and abs(ch.GenPart_eta[i]) <= 1 and ch.GenPart_status[i] == 1 and hasMomRecursive(i, 1000006, ch) and abs(ch.GenPart_vx[i]) < 0.2 and abs(ch.GenPart_vy[i]) < 0.2):
+            # pt >= 15, |eta| < 1
+            # and abs(ch.GenPart_vx[i]) < 0.2 and abs(ch.GenPart_vy[i]) < 0.2
+            if( abs(ch.GenPart_pdgId[i]) == 11 and ch.GenPart_pt[i] >= 5  and abs(ch.GenPart_eta[i]) <= 2.5 and ch.GenPart_status[i] == 1 and hasMomRecursive(i, 1000006, ch) ):
 
-                GenPart_dxy = getdxy(i, ch)
-                GenPart_dz = getdz(i, ch)
+                if(usevertex):
+                    GenPart_dxy = getdxy(i, ch)
+                    GenPart_dz = getdz(i, ch)
 
                 Fill1D(histos['TrueElePt'],ch.GenPart_pt[i])
                 Fill1D(histos['TrueEleEta'],ch.GenPart_eta[i])
-                Fill1D(histos['TrueEleVtxx'],ch.GenPart_vx[i])
-                Fill1D(histos['TrueEleVtxy'],ch.GenPart_vy[i])
-                Fill1D(histos['TrueEleVtxz'],ch.GenPart_vz[i])
-                Fill1D(histos['TrueEleDxy'], GenPart_dxy)
-                Fill1D(histos['TrueEleDz'], GenPart_dz)
-                Fill1D(histos['TrueEleDxyAbs'], abs(GenPart_dxy))
-                Fill1D(histos['TrueEleDzAbs'], abs(GenPart_dz))
+                Fill1D(histos['TrueElePhi'],ch.GenPart_phi[i])
+
+                if(usevertex):
+                    Fill1D(histos['TrueEleVtxx'],ch.GenPart_vx[i])
+                    Fill1D(histos['TrueEleVtxy'],ch.GenPart_vy[i])
+                    Fill1D(histos['TrueEleVtxz'],ch.GenPart_vz[i])
+                    Fill1D(histos['TrueEleDxy'], GenPart_dxy)
+                    Fill1D(histos['TrueEleDz'], GenPart_dz)
+                    Fill1D(histos['TrueEleDxyAbs'], abs(GenPart_dxy))
+                    Fill1D(histos['TrueEleDzAbs'], abs(GenPart_dz))
 
                 # check if there is a reco ele / isotrack:
                 eledist = 100000
@@ -341,39 +366,46 @@ def RecoAndRecoFix(threadID, it0, it1, nevtcut, ch_common):
                     eleIdx = idx0
                     Fill1D(histos['RecoElePt'], ch.GenPart_pt[i])
                     Fill1D(histos['RecoEleEta'], ch.GenPart_eta[i])
-                    Fill1D(histos['RecoEleVtxx'], ch.GenPart_vx[i])
-                    Fill1D(histos['RecoEleVtxy'], ch.GenPart_vy[i])
-                    Fill1D(histos['RecoEleVtxz'], ch.GenPart_vz[i])
-                    Fill1D(histos['RecoEleDxy'], GenPart_dxy)
-                    Fill1D(histos['RecoEleDz'], GenPart_dz)
-                    Fill1D(histos['RecoEleDxyAbs'], abs(GenPart_dxy))
-                    Fill1D(histos['RecoEleDzAbs'], abs(GenPart_dz))
+                    Fill1D(histos['RecoElePhi'], ch.GenPart_phi[i])
+
+                    if(usevertex):
+                        Fill1D(histos['RecoEleVtxx'], ch.GenPart_vx[i])
+                        Fill1D(histos['RecoEleVtxy'], ch.GenPart_vy[i])
+                        Fill1D(histos['RecoEleVtxz'], ch.GenPart_vz[i])
+                        Fill1D(histos['RecoEleDxy'], GenPart_dxy)
+                        Fill1D(histos['RecoEleDz'], GenPart_dz)
+                        Fill1D(histos['RecoEleDxyAbs'], abs(GenPart_dxy))
+                        Fill1D(histos['RecoEleDzAbs'], abs(GenPart_dz))
 
                     Fill1D(histos['RecoFixedElePt'], ch.GenPart_pt[i])
                     Fill1D(histos['RecoFixedEleEta'], ch.GenPart_eta[i])
-                    Fill1D(histos['RecoFixedEleVtxx'], ch.GenPart_vx[i])
-                    Fill1D(histos['RecoFixedEleVtxy'], ch.GenPart_vy[i])
-                    Fill1D(histos['RecoFixedEleVtxz'], ch.GenPart_vz[i])
-                    Fill1D(histos['RecoFixedEleDxy'], GenPart_dxy)
-                    Fill1D(histos['RecoFixedEleDz'], GenPart_dz)
-                    Fill1D(histos['RecoFixedEleDxyAbs'], abs(GenPart_dxy))
-                    Fill1D(histos['RecoFixedEleDzAbs'], abs(GenPart_dz))
+                    Fill1D(histos['RecoFixedElePhi'], ch.GenPart_phi[i])
 
+                    if(usevertex):
+                        Fill1D(histos['RecoFixedEleVtxx'], ch.GenPart_vx[i])
+                        Fill1D(histos['RecoFixedEleVtxy'], ch.GenPart_vy[i])
+                        Fill1D(histos['RecoFixedEleVtxz'], ch.GenPart_vz[i])
+                        Fill1D(histos['RecoFixedEleDxy'], GenPart_dxy)
+                        Fill1D(histos['RecoFixedEleDz'], GenPart_dz)
+                        Fill1D(histos['RecoFixedEleDxyAbs'], abs(GenPart_dxy))
+                        Fill1D(histos['RecoFixedEleDzAbs'], abs(GenPart_dz))
 
-                    etaSC_i, phiSC_i, calc_x, calc_y, calc2_x, calc2_y = GetGenPartSC(i, ch)
-                    tangent_x, tangent_y = phiToXY(ch.GenPart_phi[i])
-                    sc_x, sc_y = phiToXY(phiSC_i)
-                    eSCx, eSCy = phiToXY(ch.Electron_phi[eleIdx])
-                    print >> interpolate_log, "RECO ELE FOUND"
-                    print >> interpolate_log, "Gen Ele P_T, x, y, z, charge:     ", ch.GenPart_pt[i],  ch.GenPart_vx[i], ch.GenPart_vy[i], ch.GenPart_vz[i], -1*math.copysign(1,ch.GenPart_pdgId[i])
-                    print >> interpolate_log, "Gen Ele  eta, phi:                ", ch.GenPart_eta[i], ch.GenPart_phi[i]
-                    print >> interpolate_log, "SC eta, phi:                      ", etaSC_i, phiSC_i
-                    print >> interpolate_log, "Delta eta, Delta phi :            ", ch.GenPart_eta[i] - etaSC_i, ch.GenPart_phi[i] - phiSC_i
-                    print >> interpolate_log, "Tangent crossing   (x,y), phi:    ", tangent_x, tangent_y, ch.GenPart_phi[i]
-                    print >> interpolate_log, "Interpl cross SEL (x1,y1), phi:   ", calc_x, calc_y, math.atan2(calc_y, calc_x) 
-                    print >> interpolate_log, "Interpl cross other (x2,y2), phi: ", calc2_x, calc2_y, math.atan2(calc2_y, calc2_x) 
-                    print >> interpolate_log, "  RecoEle x y     (xSC,ySC),phi:  ", eSCx, eSCy, ch.Electron_phi[eleIdx]
-                    print >> interpolate_log, " "
+                        '''
+                        etaSC_i, phiSC_i, calc_x, calc_y, calc2_x, calc2_y = GetGenPartSC(i, ch)
+                        tangent_x, tangent_y = phiToXY(ch.GenPart_phi[i])
+                        sc_x, sc_y = phiToXY(phiSC_i)
+                        eSCx, eSCy = phiToXY(ch.Electron_phi[eleIdx])
+                        print >> interpolate_log, "RECO ELE FOUND"
+                        print >> interpolate_log, "Gen Ele P_T, x, y, z, charge:     ", ch.GenPart_pt[i],  ch.GenPart_vx[i], ch.GenPart_vy[i], ch.GenPart_vz[i], -1*math.copysign(1,ch.GenPart_pdgId[i])
+                        print >> interpolate_log, "Gen Ele  eta, phi:                ", ch.GenPart_eta[i], ch.GenPart_phi[i]
+                        print >> interpolate_log, "SC eta, phi:                      ", etaSC_i, phiSC_i
+                        print >> interpolate_log, "Delta eta, Delta phi :            ", ch.GenPart_eta[i] - etaSC_i, ch.GenPart_phi[i] - phiSC_i
+                        print >> interpolate_log, "Tangent crossing   (x,y), phi:    ", tangent_x, tangent_y, ch.GenPart_phi[i]
+                        print >> interpolate_log, "Interpl cross SEL (x1,y1), phi:   ", calc_x, calc_y, math.atan2(calc_y, calc_x) 
+                        print >> interpolate_log, "Interpl cross other (x2,y2), phi: ", calc2_x, calc2_y, math.atan2(calc2_y, calc2_x) 
+                        print >> interpolate_log, "  RecoEle x y     (xSC,ySC),phi:  ", eSCx, eSCy, ch.Electron_phi[eleIdx]
+                        print >> interpolate_log, " "
+                        '''
 
 
                 # match isotracks
@@ -389,19 +421,24 @@ def RecoAndRecoFix(threadID, it0, it1, nevtcut, ch_common):
                 if( dRcut(isodist,0.2) ):
                     Fill1D(histos['IsoTrackPt'], ch.GenPart_pt[i])
                     Fill1D(histos['IsoTrackEta'], ch.GenPart_eta[i])
-                    Fill1D(histos['IsoTrackVtxx'], ch.GenPart_vx[i])
-                    Fill1D(histos['IsoTrackVtxy'], ch.GenPart_vy[i])
-                    Fill1D(histos['IsoTrackVtxz'], ch.GenPart_vz[i])
-                    Fill1D(histos['IsoTrackDxy'], GenPart_dxy)
-                    Fill1D(histos['IsoTrackDz'], GenPart_dz)
-                    Fill1D(histos['IsoTrackDxyAbs'], abs(GenPart_dxy))
-                    Fill1D(histos['IsoTrackDzAbs'], abs(GenPart_dz))
+                    Fill1D(histos['IsoTrackPhi'], ch.GenPart_phi[i])
+
+
+                    if(usevertex):
+                        Fill1D(histos['IsoTrackVtxx'], ch.GenPart_vx[i])
+                        Fill1D(histos['IsoTrackVtxy'], ch.GenPart_vy[i])
+                        Fill1D(histos['IsoTrackVtxz'], ch.GenPart_vz[i])
+                        Fill1D(histos['IsoTrackDxy'], GenPart_dxy)
+                        Fill1D(histos['IsoTrackDz'], GenPart_dz)
+                        Fill1D(histos['IsoTrackDxyAbs'], abs(GenPart_dxy))
+                        Fill1D(histos['IsoTrackDzAbs'], abs(GenPart_dz))
                     isoIdx = idx0
 
                 # attempt reco fix
                 if( eleIdx == -1 ):
                     # reco ele not found - check if there is a reco-ed photon
 
+                    '''
                     # when matching ele with photon, use extrapolated track:
                     etaSC_i, phiSC_i, calc_x, calc_y, calc2_x, calc2_y = GetGenPartSC(i, ch)
                     tangent_x, tangent_y = phiToXY(ch.GenPart_phi[i])
@@ -416,37 +453,52 @@ def RecoAndRecoFix(threadID, it0, it1, nevtcut, ch_common):
                         print >> interpolate_log, "Interpl cross other (x2,y2), phi: ", calc2_x, calc2_y, math.atan2(calc2_y, calc2_x) 
 
                     #print >> interpolate_log, "Supercluster   (yECAL,xECAL):", sc_y, sc_x
+                    '''
+
                     there_is_reco_photon = False
                     for j in range(ch.nPhoton):
+                        '''
+                        # extrapolate
                         dist0 = dR(etaSC_i, ch.Photon_eta[j], phiSC_i, ch.Photon_phi[j] )
                         pSCx, pSCy = phiToXY(ch.Photon_phi[j])
                         #print >> interpolate_log, "  Photoncand-"+str(j)+" eta, phi, pt: ", ch.Photon_eta[j], ch.Photon_phi[j], ch.Photon_pt[j]
                         print >> interpolate_log, "  Photocand-"+str(j)+" (xSC,ySC),phi:      ", pSCx, pSCy, ch.Photon_phi[j]
+                        '''
+                        dist0 = dR(ch.GenPart_eta[i], ch.Photon_eta[j], ch.GenPart_phi[i], ch.Photon_phi[j] )
                         if( dRcut(dist0, 0.2) ):
                             there_is_reco_photon = True
                             break
-                    
+                    '''
                     if( ch.nPhoton > 0):
                         print >> interpolate_log, "Photon found: ", there_is_reco_photon
                         print >> interpolate_log, " "
-
+                    '''
                     if( there_is_reco_photon):
                         # Recover efficiency by looking for photon, but this has big background
                         # Check if there is an isotrack for true ele -> then the isotrack is the detected ele
                         if( not isoIdx == -1):
                             Fill1D(histos['RecoFixedElePt'], ch.GenPart_pt[i])
                             Fill1D(histos['RecoFixedEleEta'], ch.GenPart_eta[i])
-                            Fill1D(histos['RecoFixedEleVtxx'], ch.GenPart_vx[i])
-                            Fill1D(histos['RecoFixedEleVtxy'], ch.GenPart_vy[i])
-                            Fill1D(histos['RecoFixedEleVtxz'], ch.GenPart_vz[i])
-                            Fill1D(histos['RecoFixedEleDxy'], GenPart_dxy)
-                            Fill1D(histos['RecoFixedEleDz'], GenPart_dz)
-                            Fill1D(histos['RecoFixedEleDxyAbs'], abs(GenPart_dxy))
-                            Fill1D(histos['RecoFixedEleDzAbs'], abs(GenPart_dz))
+                            Fill1D(histos['RecoFixedElePhi'], ch.GenPart_phi[i])
+
+                            if(usevertex):
+                                Fill1D(histos['RecoFixedEleVtxx'], ch.GenPart_vx[i])
+                                Fill1D(histos['RecoFixedEleVtxy'], ch.GenPart_vy[i])
+                                Fill1D(histos['RecoFixedEleVtxz'], ch.GenPart_vz[i])
+                                Fill1D(histos['RecoFixedEleDxy'], GenPart_dxy)
+                                Fill1D(histos['RecoFixedEleDz'], GenPart_dz)
+                                Fill1D(histos['RecoFixedEleDxyAbs'], abs(GenPart_dxy))
+                                Fill1D(histos['RecoFixedEleDzAbs'], abs(GenPart_dz))
             
+
+                            
                             # these are not filled when ele is found, just here:
-                            Fill1D(histos['RecoPhotonPlusIsoTrackDxyAbs'], abs(GenPart_dxy))
-                            Fill1D(histos['RecoPhotonPlusIsoTrackDzAbs'], abs(GenPart_dz))
+                            Fill1D(histos['RecoPhotonPlusIsoTrackPt'], ch.GenPart_pt[i])
+                            Fill1D(histos['RecoPhotonPlusIsoTrackEta'], ch.GenPart_eta[i])
+                            Fill1D(histos['RecoPhotonPlusIsoTrackPhi'], ch.GenPart_phi[i])
+                            if(usevertex):
+                                Fill1D(histos['RecoPhotonPlusIsoTrackDxyAbs'], abs(GenPart_dxy))
+                                Fill1D(histos['RecoPhotonPlusIsoTrackDzAbs'], abs(GenPart_dz))
 
                 # photon reco eff
                 phodist = 100000
@@ -459,13 +511,15 @@ def RecoAndRecoFix(threadID, it0, it1, nevtcut, ch_common):
                 if( dRcut(phodist,0.2) ):
                     Fill1D(histos['RecoPhotonPt'], ch.GenPart_pt[i])
                     Fill1D(histos['RecoPhotonEta'], ch.GenPart_eta[i])
-                    Fill1D(histos['RecoPhotonVtxx'], ch.GenPart_vx[i])
-                    Fill1D(histos['RecoPhotonVtxy'], ch.GenPart_vy[i])
-                    Fill1D(histos['RecoPhotonVtxz'], ch.GenPart_vz[i])
-                    Fill1D(histos['RecoPhotonDxy'], GenPart_dxy)
-                    Fill1D(histos['RecoPhotonDz'], GenPart_dz)
-                    Fill1D(histos['RecoPhotonDxyAbs'], abs(GenPart_dxy))
-                    Fill1D(histos['RecoPhotonDzAbs'], abs(GenPart_dz))
+                    Fill1D(histos['RecoPhotonPhi'], ch.GenPart_phi[i])
+                    if(usevertex):
+                        Fill1D(histos['RecoPhotonVtxx'], ch.GenPart_vx[i])
+                        Fill1D(histos['RecoPhotonVtxy'], ch.GenPart_vy[i])
+                        Fill1D(histos['RecoPhotonVtxz'], ch.GenPart_vz[i])
+                        Fill1D(histos['RecoPhotonDxy'], GenPart_dxy)
+                        Fill1D(histos['RecoPhotonDz'], GenPart_dz)
+                        Fill1D(histos['RecoPhotonDxyAbs'], abs(GenPart_dxy))
+                        Fill1D(histos['RecoPhotonDzAbs'], abs(GenPart_dz))
 
                 histos['dRControlPlot2D'].Fill(isodist,phodist)
 
@@ -499,8 +553,10 @@ def RecoAndRecoFix(threadID, it0, it1, nevtcut, ch_common):
                     # this is the denom:
                     histos['TrueBackgroundPt'].Fill( ch.GenPart_pt[minIBackgnd])
                     histos['TrueBackgroundEta'].Fill( ch.GenPart_eta[minIBackgnd])
-                    histos['TrueBackgroundDxyAbs'].Fill( abs(getdxy(minIBackgnd, ch)))
-                    histos['TrueBackgroundDzAbs'].Fill( abs(getdz(minIBackgnd, ch)))
+                    histos['TrueBackgroundPhi'].Fill( ch.GenPart_phi[minIBackgnd])
+                    if(usevertex):
+                        histos['TrueBackgroundDxyAbs'].Fill( abs(getdxy(minIBackgnd, ch)))
+                        histos['TrueBackgroundDzAbs'].Fill( abs(getdz(minIBackgnd, ch)))
 
         # To get background rejection: redo the matching, but work on the true background as input sample:
         for iBK in range(len(background)):
@@ -523,8 +579,10 @@ def RecoAndRecoFix(threadID, it0, it1, nevtcut, ch_common):
             if( not dRcut(eledist) ):
                 histos['RejectBackgroundPt'].Fill( ch.GenPart_pt[i])
                 histos['RejectBackgroundEta'].Fill( ch.GenPart_eta[i])
-                histos['RejectBackgroundDxyAbs'].Fill( abs(getdxy(i, ch)))
-                histos['RejectBackgroundDzAbs'].Fill( abs(getdz(i, ch)))
+                histos['RejectBackgroundPhi'].Fill( ch.GenPart_phi[i])
+                if(usevertex):
+                    histos['RejectBackgroundDxyAbs'].Fill( abs(getdxy(i, ch)))
+                    histos['RejectBackgroundDzAbs'].Fill( abs(getdz(i, ch)))
             else:
                 eleIdx = idx0 
 
@@ -554,8 +612,10 @@ def RecoAndRecoFix(threadID, it0, it1, nevtcut, ch_common):
                 if( not there_is_reco_photon or isoIdx == -1):
                     histos['RejectBackgroundRecoFixPt'].Fill( ch.GenPart_pt[i])
                     histos['RejectBackgroundRecoFixEta'].Fill( ch.GenPart_eta[i])
-                    histos['RejectBackgroundRecoFixDxyAbs'].Fill( abs(getdxy(i, ch)))
-                    histos['RejectBackgroundRecoFixDzAbs'].Fill( abs(getdz(i, ch)))
+                    histos['RejectBackgroundRecoFixPhi'].Fill( ch.GenPart_phi[i])
+                    if(usevertex):
+                        histos['RejectBackgroundRecoFixDxyAbs'].Fill( abs(getdxy(i, ch)))
+                        histos['RejectBackgroundRecoFixDzAbs'].Fill( abs(getdz(i, ch)))
     # Save histos:
     interpolate_log.close()
     hfile.Write()
@@ -594,6 +654,7 @@ hfile = ROOT.TFile( 'root_files/RecoFixThreadedSTACK_Sample'+sample+'.root', 'RE
 savehistos = {}
 savehistos['TrueElePt'] = HistInfo(hname = 'TrueElePt', sample = histext, binning = ptBinning, binopt = 'var', histclass = ROOT.TH1F).make_hist()
 savehistos['TrueEleEta'] = HistInfo(hname = 'TrueEleEta', sample = histext, binning = [30, -3, 3], histclass = ROOT.TH1F).make_hist()
+savehistos['TrueElePhi'] = HistInfo(hname = 'TrueElePhi', sample = histext, binning = [30, -4, 4], histclass = ROOT.TH1F).make_hist()
 savehistos['TrueEleVtxx'] = HistInfo(hname = 'TrueEleVtxx', sample = histext, binning = [40, -1, 1], histclass = ROOT.TH1F).make_hist()
 savehistos['TrueEleVtxy'] = HistInfo(hname = 'TrueEleVtxy', sample = histext, binning = [40, -1, 1], histclass = ROOT.TH1F).make_hist()
 savehistos['TrueEleVtxz'] = HistInfo(hname = 'TrueEleVtxz', sample = histext, binning = [50, -50, 50], histclass = ROOT.TH1F).make_hist()
@@ -604,6 +665,7 @@ savehistos['TrueEleDzAbs'] = HistInfo(hname = 'TrueEleDzAbs', sample = histext, 
 
 savehistos['RecoElePt'] = HistInfo(hname = 'RecoElePt', sample = histext, binning = ptBinning, binopt = 'var', histclass = ROOT.TH1F).make_hist()
 savehistos['RecoEleEta'] = HistInfo(hname = 'RecoEleEta', sample = histext, binning = [30, -3, 3], histclass = ROOT.TH1F).make_hist()
+savehistos['RecoElePhi'] = HistInfo(hname = 'RecoElePhi', sample = histext, binning = [30, -4, 4], histclass = ROOT.TH1F).make_hist()
 savehistos['RecoEleVtxx'] = HistInfo(hname = 'RecoEleVtxx', sample = histext, binning = [30, -3, 3], histclass = ROOT.TH1F).make_hist()
 savehistos['RecoEleVtxy'] = HistInfo(hname = 'RecoEleVtxy', sample = histext, binning = [30, -3, 3], histclass = ROOT.TH1F).make_hist()
 savehistos['RecoEleVtxz'] = HistInfo(hname = 'RecoEleVtxz', sample = histext, binning = [30, -3, 3], histclass = ROOT.TH1F).make_hist()
@@ -614,6 +676,7 @@ savehistos['RecoEleDzAbs'] = HistInfo(hname = 'RecoEleDzAbs', sample = histext, 
 
 savehistos['IsoTrackPt'] = HistInfo(hname = 'IsoTrackPt', sample = histext, binning = ptBinning, binopt = 'var', histclass = ROOT.TH1F).make_hist()
 savehistos['IsoTrackEta'] = HistInfo(hname = 'IsoTrackEta', sample = histext, binning = [30, -3, 3], histclass = ROOT.TH1F).make_hist()
+savehistos['IsoTrackPhi'] = HistInfo(hname = 'IsoTrackPhi', sample = histext, binning = [30, -4, 4], histclass = ROOT.TH1F).make_hist()
 savehistos['IsoTrackVtxx'] = HistInfo(hname = 'IsoTrackVtxx', sample = histext, binning = [30, -3, 3], histclass = ROOT.TH1F).make_hist()
 savehistos['IsoTrackVtxy'] = HistInfo(hname = 'IsoTrackVtxy', sample = histext, binning = [30, -3, 3], histclass = ROOT.TH1F).make_hist()
 savehistos['IsoTrackVtxz'] = HistInfo(hname = 'IsoTrackVtxz', sample = histext, binning = [30, -3, 3], histclass = ROOT.TH1F).make_hist()
@@ -624,6 +687,7 @@ savehistos['IsoTrackDzAbs'] = HistInfo(hname = 'IsoTrackDzAbs', sample = histext
 
 savehistos['RecoFixedElePt'] = HistInfo(hname = 'RecoFixedElePt', sample = histext, binning = ptBinning, binopt = 'var', histclass = ROOT.TH1F).make_hist()
 savehistos['RecoFixedEleEta'] = HistInfo(hname = 'RecoFixedEleEta', sample = histext, binning = [30, -3, 3], histclass = ROOT.TH1F).make_hist()
+savehistos['RecoFixedElePhi'] = HistInfo(hname = 'RecoFixedElePhi', sample = histext, binning = [30, -4, 4], histclass = ROOT.TH1F).make_hist()
 savehistos['RecoFixedEleVtxx'] = HistInfo(hname = 'RecoFixedEleVtxx', sample = histext, binning = [30, -3, 3], histclass = ROOT.TH1F).make_hist()
 savehistos['RecoFixedEleVtxy'] = HistInfo(hname = 'RecoFixedEleVtxy', sample = histext, binning = [30, -3, 3], histclass = ROOT.TH1F).make_hist()
 savehistos['RecoFixedEleVtxz'] = HistInfo(hname = 'RecoFixedEleVtxz', sample = histext, binning = [30, -3, 3], histclass = ROOT.TH1F).make_hist()
@@ -634,6 +698,7 @@ savehistos['RecoFixedEleDzAbs'] = HistInfo(hname = 'RecoFixedEleDzAbs', sample =
 
 savehistos['TruePhotonPt'] = HistInfo(hname = 'TruePhotonPt', sample = histext, binning = ptBinning, binopt = 'var', histclass = ROOT.TH1F).make_hist()
 savehistos['TruePhotonEta'] = HistInfo(hname = 'TruePhotonEta', sample = histext, binning = [30, -3, 3], histclass = ROOT.TH1F).make_hist()
+savehistos['TruePhotonPhi'] = HistInfo(hname = 'TruePhotonPhi', sample = histext, binning = [30, -4, 4], histclass = ROOT.TH1F).make_hist()
 savehistos['TruePhotonVtxx'] = HistInfo(hname = 'TruePhotonVtxx', sample = histext, binning = [30, -3, 3], histclass = ROOT.TH1F).make_hist()
 savehistos['TruePhotonVtxy'] = HistInfo(hname = 'TruePhotonVtxy', sample = histext, binning = [30, -3, 3], histclass = ROOT.TH1F).make_hist()
 savehistos['TruePhotonVtxz'] = HistInfo(hname = 'TruePhotonVtxz', sample = histext, binning = [30, -3, 3], histclass = ROOT.TH1F).make_hist()
@@ -644,6 +709,7 @@ savehistos['TruePhotonDzAbs'] = HistInfo(hname = 'TruePhotonDzAbs', sample = his
 
 savehistos['RecoPhotonPt'] = HistInfo(hname = 'RecoPhotonPt', sample = histext, binning = ptBinning, binopt = 'var', histclass = ROOT.TH1F).make_hist()
 savehistos['RecoPhotonEta'] = HistInfo(hname = 'RecoPhotonEta', sample = histext, binning = [30, -3, 3], histclass = ROOT.TH1F).make_hist()
+savehistos['RecoPhotonPhi'] = HistInfo(hname = 'RecoPhotonPhi', sample = histext, binning = [30, -4, 4], histclass = ROOT.TH1F).make_hist()
 savehistos['RecoPhotonVtxx'] = HistInfo(hname = 'RecoPhotonVtxx', sample = histext, binning = [30, -3, 3], histclass = ROOT.TH1F).make_hist()
 savehistos['RecoPhotonVtxy'] = HistInfo(hname = 'RecoPhotonVtxy', sample = histext, binning = [30, -3, 3], histclass = ROOT.TH1F).make_hist()
 savehistos['RecoPhotonVtxz'] = HistInfo(hname = 'RecoPhotonVtxz', sample = histext, binning = [30, -3, 3], histclass = ROOT.TH1F).make_hist()
@@ -652,6 +718,10 @@ savehistos['RecoPhotonDz'] = HistInfo(hname = 'RecoPhotonDz', sample = histext, 
 savehistos['RecoPhotonDxyAbs'] = HistInfo(hname = 'RecoPhotonDxyAbs', sample = histext, binning = [40, 0, 20], histclass = ROOT.TH1F).make_hist()
 savehistos['RecoPhotonDzAbs'] = HistInfo(hname = 'RecoPhotonDzAbs', sample = histext, binning = [40, 0, 20], histclass = ROOT.TH1F).make_hist()
 
+
+savehistos['RecoPhotonPlusIsoTrackPt'] = HistInfo(hname = 'RecoPhotonPlusIsoTrackPt', sample = histext, binning = ptBinning, binopt = 'var', histclass = ROOT.TH1F).make_hist()
+savehistos['RecoPhotonPlusIsoTrackEta'] = HistInfo(hname = 'RecoPhotonPlusIsoTrackEta', sample = histext, binning = [30, -3, 3], histclass = ROOT.TH1F).make_hist()
+savehistos['RecoPhotonPlusIsoTrackPhi'] = HistInfo(hname = 'RecoPhotonPlusIsoTrackPhi', sample = histext, binning = [30, -4, 4], histclass = ROOT.TH1F).make_hist()
 savehistos['RecoPhotonPlusIsoTrackDxyAbs'] = HistInfo(hname = 'RecoPhotonPlusIsoTrackDxyAbs', sample = histext, binning = [40, 0, 20], histclass = ROOT.TH1F).make_hist()
 savehistos['RecoPhotonPlusIsoTrackDzAbs'] = HistInfo(hname = 'RecoPhotonPlusIsoTrackDzAbs', sample = histext, binning = [40, 0, 20], histclass = ROOT.TH1F).make_hist()
 
@@ -659,16 +729,19 @@ savehistos['dRControlPlot2D'] = HistInfo(hname = 'dRControlPlot2D', sample = his
 
 savehistos['TrueBackgroundPt'] = HistInfo(hname = 'TrueBackgroundPt', sample = histext, binning = ptBinning, binopt = 'var', histclass = ROOT.TH1F).make_hist()
 savehistos['TrueBackgroundEta'] = HistInfo(hname = 'TrueBackgroundEta', sample = histext, binning = [30, -3, 3], histclass = ROOT.TH1F).make_hist()
+savehistos['TrueBackgroundPhi'] = HistInfo(hname = 'TrueBackgroundPhi', sample = histext, binning = [30, -4, 4], histclass = ROOT.TH1F).make_hist()
 savehistos['TrueBackgroundDxyAbs'] = HistInfo(hname = 'TrueBackgroundDxyAbs', sample = histext, binning = [40, 0, 20], histclass = ROOT.TH1F).make_hist()
 savehistos['TrueBackgroundDzAbs'] = HistInfo(hname = 'TrueBackgroundDzAbs', sample = histext, binning = [40, 0, 20], histclass = ROOT.TH1F).make_hist()
 
 savehistos['RejectBackgroundPt'] = HistInfo(hname = 'RejectBackgroundPt', sample = histext, binning = ptBinning, binopt = 'var', histclass = ROOT.TH1F).make_hist()
 savehistos['RejectBackgroundEta'] = HistInfo(hname = 'RejectBackgroundEta', sample = histext, binning = [30, -3, 3], histclass = ROOT.TH1F).make_hist()
+savehistos['RejectBackgroundPhi'] = HistInfo(hname = 'RejectBackgroundPhi', sample = histext, binning = [30, -4, 4], histclass = ROOT.TH1F).make_hist()
 savehistos['RejectBackgroundDxyAbs'] = HistInfo(hname = 'RejectBackgroundDxyAbs', sample = histext, binning = [40, 0, 20], histclass = ROOT.TH1F).make_hist()
 savehistos['RejectBackgroundDzAbs'] = HistInfo(hname = 'RejectBackgroundDzAbs', sample = histext, binning = [40, 0, 20], histclass = ROOT.TH1F).make_hist()
 
 savehistos['RejectBackgroundRecoFixPt'] = HistInfo(hname = 'RejectBackgroundRecoFixPt', sample = histext, binning = ptBinning, binopt = 'var', histclass = ROOT.TH1F).make_hist()
 savehistos['RejectBackgroundRecoFixEta'] = HistInfo(hname = 'RejectBackgroundRecoFixEta', sample = histext, binning = [30, -3, 3], histclass = ROOT.TH1F).make_hist()
+savehistos['RejectBackgroundRecoFixPhi'] = HistInfo(hname = 'RejectBackgroundRecoFixPhi', sample = histext, binning = [30, -4, 4], histclass = ROOT.TH1F).make_hist()
 savehistos['RejectBackgroundRecoFixDxyAbs'] = HistInfo(hname = 'RejectBackgroundRecoFixDxyAbs', sample = histext, binning = [40, 0, 20], histclass = ROOT.TH1F).make_hist()
 savehistos['RejectBackgroundRecoFixDzAbs'] = HistInfo(hname = 'RejectBackgroundRecoFixDzAbs', sample = histext, binning = [40, 0, 20], histclass = ROOT.TH1F).make_hist()
 
