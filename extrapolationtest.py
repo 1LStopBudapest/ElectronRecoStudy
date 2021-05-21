@@ -41,19 +41,19 @@ def extrapolateTrack(pt, eta, phi, charge, x0, y0, z0):
         #Z_ECAL = z0/100.0 + R * math.sinh(eta) *(math.acos(1 - 1.29*1.29 / (2*R*R)));
         Z_ECAL = z0/100.0 - (math.asin((y-yC)/R) - phi - charge*3.14159265359/2.0) * (R*math.sinh(eta) / charge)
 
-        if(Z_ECAL > 2.1):
-            Z_ECAL = 2.1
-        if(Z_ECAL < -2.1):
-            Z_ECAL = -2.1
+        if(Z_ECAL > 2.935):
+            Z_ECAL = 2.935
+        if(Z_ECAL < -2.935):
+            Z_ECAL = -2.935
     else:
         # Barrel cannot be hit, endcap is hit (electron spirals out)
         if(eta > 0):
-            Z_ECAL = 2.1
+            Z_ECAL = 2.935
         else:
-            Z_ECAL = -2.1
-
-    X_ECAL = xC + R * math.cos(-charge * (Z_ECAL-z0/100.0)/(R * math.sinh(eta)) + charge * 3.14159265359/2.0)
-    Y_ECAL = yC + R * math.sin(-charge * (Z_ECAL-z0/100.0)/(R * math.sinh(eta)) + charge * 3.14159265359/2.0)
+            Z_ECAL = -2.935
+# -charge valtoztatva +ra
+    X_ECAL = xC + R * math.cos(charge * (Z_ECAL-z0/100.0)/(R * math.sinh(eta)) + phi + charge * 3.14159265359/2.0)
+    Y_ECAL = yC + R * math.sin(charge * (Z_ECAL-z0/100.0)/(R * math.sinh(eta)) + phi + charge * 3.14159265359/2.0)
   
     D_ECAL = math.sqrt(X_ECAL*X_ECAL+Y_ECAL*Y_ECAL)
 
@@ -85,8 +85,11 @@ charge = +1
 
 
 etaSC, phiSC, x, y, x_other, y_other, xC, yC = extrapolateTrack(pt, eta, phi, charge, x0, y0, z0)
-print phi, phiSC, xC, yC , charge
+print phi, phiSC, XYToPhi(x,y), xC, yC , charge
+print phi, phiSC, XYToPhi(x_other,y_other), xC, yC , charge
 
+print ""
 charge = -1
 etaSC, phiSC, x, y, x_other, y_other, xC, yC  = extrapolateTrack(pt, eta, phi, charge, x0, y0, z0)
-print phi, phiSC, xC, yC , charge
+print phi, phiSC, XYToPhi(x,y), xC, yC , charge
+print phi, phiSC, XYToPhi(x_other,y_other), xC, yC , charge
