@@ -39,7 +39,7 @@ def extrapolateTrack(pt, eta, phi, charge, x0, y0, z0):
             x_other = x1
 
         #Z_ECAL = z0/100.0 + R * math.sinh(eta) *(math.acos(1 - 1.29*1.29 / (2*R*R)));
-        Z_ECAL = z0/100.0 - (math.asin((y-yC)/R) - phi - charge*3.14159265359/2.0) * (R*math.sinh(eta) / charge)
+        Z_ECAL = z0/100.0 + (math.asin((y-yC)/R) - phi - charge*3.14159265359/2.0) * (R*math.sinh(eta) / charge)
 
         if(Z_ECAL > 2.935):
             Z_ECAL = 2.935
@@ -86,10 +86,11 @@ charge = +1
 
 etaSC, phiSC, x, y, x_other, y_other, xC, yC = extrapolateTrack(pt, eta, phi, charge, x0, y0, z0)
 print phi, phiSC, XYToPhi(x,y), xC, yC , charge
-print phi, phiSC, XYToPhi(x_other,y_other), xC, yC , charge
+#print phi, phiSC, XYToPhi(x_other,y_other), xC, yC , charge
+
 
 print ""
 charge = -1
 etaSC, phiSC, x, y, x_other, y_other, xC, yC  = extrapolateTrack(pt, eta, phi, charge, x0, y0, z0)
 print phi, phiSC, XYToPhi(x,y), xC, yC , charge
-print phi, phiSC, XYToPhi(x_other,y_other), xC, yC , charge
+#print phi, phiSC, XYToPhi(x_other,y_other), xC, yC , charge
