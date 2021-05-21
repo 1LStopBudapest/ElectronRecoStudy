@@ -4,8 +4,8 @@ import math
 def extrapolateTrack(pt, eta, phi, charge, x0, y0, z0):
     #R = pt / (0.3 * 3.8)
     R = pt / (0.3 * 3.8 )
-    xC = x0/100.0 + R* math.cos(phi - charge * 3.14159265359/2.0)
-    yC = y0/100.0 + R* math.sin(phi - charge * 3.14159265359/2.0)
+    xC = x0/100.0 + R* math.cos(phi + charge * 3.14159265359/2.0)
+    yC = y0/100.0 + R* math.sin(phi + charge * 3.14159265359/2.0)
 
 
     # calculate x,y intersection of track
@@ -72,12 +72,14 @@ def phiToXY(phi):
     y = rb * math.sin(phi)
     return x,y
 
+def XYToPhi(x,y):
+    return math.atan2(y,x)
 
 
 
 eta = 0.000000001
-phi = 0
-pt = 5
+phi = 3.1415 / 2
+pt = 50
 x0,y0,z0=0,0,0
 charge = +1
 
