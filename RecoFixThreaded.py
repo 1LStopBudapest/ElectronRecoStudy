@@ -100,15 +100,18 @@ def hasMomRecursive(i, pdgid, ch):
 
 
 def extrapolateTrack(pt, eta, phi, charge, x0, y0, z0):
-    #R = pt / (0.3 * 3.8)
-    R = pt / (0.3 * 3.8 * charge)
-    xC = x0/100.0 + R* math.cos(phi + charge * 3.14159265359/2.0)
-    yC = y0/100.0 + R* math.sin(phi + charge * 3.14159265359/2.0)
-
+    PI=3.14159265359
+    MAX_R=1.29
+    MAX_Z=2.935
+            
+    R = pt / (0.3 * 3.8 )
+    
+    xC = x0/100.0 - R* math.cos(phi - charge * PI/2.0)
+    yC = y0/100.0 - R* math.sin(phi - charge * PI/2.0)
 
     # calculate x,y intersection of track
     a = (-1* yC) / xC
-    rb = 129.0 / 100.0
+    rb = MAX_R
     RC2 = xC**2 + yC**2
     b = (RC2 - R**2 + rb**2) / (2*xC)
 
@@ -116,7 +119,7 @@ def extrapolateTrack(pt, eta, phi, charge, x0, y0, z0):
     qb = 2*a*b
     qc = b**2 - rb**2
     disc = qb**2 - 4*qa*qc
-
+    
     y,x,y_other,x_other = 0,0,0,0
     if( disc > 0):
         # barrel can be hit, solution exists
@@ -124,7 +127,7 @@ def extrapolateTrack(pt, eta, phi, charge, x0, y0, z0):
         y2 = (-qb - math.sqrt(disc)) / (2*qa)
         x1 = b + y1*a
         x2 = b + y2*a
-
+        
         if(phi > 0):
             y = y1
             x = x1
@@ -137,32 +140,40 @@ def extrapolateTrack(pt, eta, phi, charge, x0, y0, z0):
             x_other = x1
 
         #Z_ECAL = z0/100.0 + R * math.sinh(eta) *(math.acos(1 - 1.29*1.29 / (2*R*R)));
-        Z_ECAL = z0/100.0 - (math.asin((y-yC)/R) - phi - charge*3.14159265359/2.0) * (R*math.sinh(eta) / charge)
-
-        if(Z_ECAL > 2.1):
-            Z_ECAL = 2.1
-        if(Z_ECAL < -2.1):
-            Z_ECAL = -2.1
+        yangle=math.asin((y-yC)/R)
+        xangle=math.acos((x-xC)/R)
+        angle=math.atan2(y-yC,x-xC)
+        phi0=phi - charge*PI/2.0
+        AngleY=yangle - phi0
+        AngleX=xangle - phi0
+        Angle=angle - phi0
+        Z_ECAL_X = z0/100.0 + AngleX * (R*math.sinh(eta) / charge)
+        Z_ECAL_Y = z0/100.0 + AngleY * (R*math.sinh(eta) / charge)
+        Z_ECAL = z0/100.0 + Angle * (R*math.sinh(eta) / charge)
+                
+        if(Z_ECAL > MAX_Z):
+            Z_ECAL = MAX_Z
+        if(Z_ECAL < -MAX_Z):
+            Z_ECAL = -MAX_Z
     else:
         # Barrel cannot be hit, endcap is hit (electron spirals out)
         if(eta > 0):
-            Z_ECAL = 2.1
+            Z_ECAL = MAX_Z
         else:
-            Z_ECAL = -2.1
-
-    X_ECAL = xC + R * math.cos(-charge * (Z_ECAL-z0/100.0)/(R * math.sinh(eta)) + charge * 3.14159265359/2.0)
-    Y_ECAL = yC + R * math.sin(-charge * (Z_ECAL-z0/100.0)/(R * math.sinh(eta)) + charge * 3.14159265359/2.0)
+            Z_ECAL = -MAX_Z
+    X_ECAL = xC + R * math.cos(charge * (Z_ECAL-z0/100.0)/(R * math.sinh(eta)) + phi - charge * PI/2.0)
+    Y_ECAL = yC + R * math.sin(charge * (Z_ECAL-z0/100.0)/(R * math.sinh(eta)) + phi - charge * PI/2.0)
   
     D_ECAL = math.sqrt(X_ECAL*X_ECAL+Y_ECAL*Y_ECAL)
 
     etaSC = math.asinh(Z_ECAL/D_ECAL)
     if(Y_ECAL > 0):
-        phiSC = math.cos(X_ECAL/D_ECAL)
+        phiSC = math.acos(X_ECAL/D_ECAL)
     else:
-        phiSC = -1.0 * math.cos(X_ECAL/D_ECAL)
+        phiSC = -1.0 * math.acos(X_ECAL/D_ECAL)
+        
+    return etaSC, phiSC, x, y, x_other, y_other, xC, yC
 
-
-    return etaSC, phiSC, x, y, x_other, y_other
 
 def phiToXY(phi):
     rb = 129.0 / 100.0
@@ -333,7 +344,9 @@ def RecoAndRecoFix(threadID, it0, it1, nevtcut, ch_common):
             # electron, pt eta cuts, status 1, with a stop mother somewhere in mother history
             # pt >= 15, |eta| < 1
             # and abs(ch.GenPart_vx[i]) < 0.2 and abs(ch.GenPart_vy[i]) < 0.2
-            if( abs(ch.GenPart_pdgId[i]) == 11 and ch.GenPart_pt[i] >= 5  and abs(ch.GenPart_eta[i]) <= 2.5 and ch.GenPart_status[i] == 1 and hasMomRecursive(i, 1000006, ch) ):
+            # FIXME DOLGOK BENT
+            # es root file open block
+            if( abs(ch.GenPart_pdgId[i]) == 11 and ch.GenPart_pt[i] >= 13  and abs(ch.GenPart_eta[i]) <= 1 and ch.GenPart_status[i] == 1 and hasMomRecursive(i, 1000006, ch) and abs(ch.GenPart_vx[i]) < 0.2 and abs(ch.GenPart_vy[i]) < 0.2):
 
                 if(usevertex):
                     GenPart_dxy = getdxy(i, ch)
@@ -381,6 +394,9 @@ def RecoAndRecoFix(threadID, it0, it1, nevtcut, ch_common):
                     Fill1D(histos['RecoFixedEleEta'], ch.GenPart_eta[i])
                     Fill1D(histos['RecoFixedElePhi'], ch.GenPart_phi[i])
 
+
+                    
+
                     if(usevertex):
                         Fill1D(histos['RecoFixedEleVtxx'], ch.GenPart_vx[i])
                         Fill1D(histos['RecoFixedEleVtxy'], ch.GenPart_vy[i])
@@ -390,8 +406,23 @@ def RecoAndRecoFix(threadID, it0, it1, nevtcut, ch_common):
                         Fill1D(histos['RecoFixedEleDxyAbs'], abs(GenPart_dxy))
                         Fill1D(histos['RecoFixedEleDzAbs'], abs(GenPart_dz))
 
+                        
+                        etaSC_i, phiSC_i, calc_x, calc_y, calc2_x, calc2_y, xC, yC = GetGenPartSC(i, ch)
+
+                        eledistex = 100000
+                        for j in range(ch.nElectron):
+                            distex0 = dR(etaSC_i, ch.Electron_eta[eleIdx], phiSC_i, ch.Electron_phi[eleIdx] ) 
+                            if( distex0 < eledistex):
+                                eledistex = distex0
+                        print >> interpolate_log, "RECO ELE FOUND"
+                        print >> interpolate_log, "Gen Ele P_T, x, y, z, charge:     ", ch.GenPart_pt[i],  ch.GenPart_vx[i], ch.GenPart_vy[i], ch.GenPart_vz[i], -1*math.copysign(1,ch.GenPart_pdgId[i])
+
+                        print >> interpolate_log, "dR Eledist simple reco:  ", eledist
+                        print >> interpolate_log, "dR Eledist extrapolate:  ", eledistex
+                        print >> interpolate_log, " "
+
+
                         '''
-                        etaSC_i, phiSC_i, calc_x, calc_y, calc2_x, calc2_y = GetGenPartSC(i, ch)
                         tangent_x, tangent_y = phiToXY(ch.GenPart_phi[i])
                         sc_x, sc_y = phiToXY(phiSC_i)
                         eSCx, eSCy = phiToXY(ch.Electron_phi[eleIdx])
@@ -400,12 +431,14 @@ def RecoAndRecoFix(threadID, it0, it1, nevtcut, ch_common):
                         print >> interpolate_log, "Gen Ele  eta, phi:                ", ch.GenPart_eta[i], ch.GenPart_phi[i]
                         print >> interpolate_log, "SC eta, phi:                      ", etaSC_i, phiSC_i
                         print >> interpolate_log, "Delta eta, Delta phi :            ", ch.GenPart_eta[i] - etaSC_i, ch.GenPart_phi[i] - phiSC_i
+                        print >> interpolate_log, "Circle origo          (xC,yC)     ", xC, yC
                         print >> interpolate_log, "Tangent crossing   (x,y), phi:    ", tangent_x, tangent_y, ch.GenPart_phi[i]
                         print >> interpolate_log, "Interpl cross SEL (x1,y1), phi:   ", calc_x, calc_y, math.atan2(calc_y, calc_x) 
                         print >> interpolate_log, "Interpl cross other (x2,y2), phi: ", calc2_x, calc2_y, math.atan2(calc2_y, calc2_x) 
                         print >> interpolate_log, "  RecoEle x y     (xSC,ySC),phi:  ", eSCx, eSCy, ch.Electron_phi[eleIdx]
                         print >> interpolate_log, " "
                         '''
+                        
 
 
                 # match isotracks
@@ -647,7 +680,7 @@ for i in range(Nthreads):
 print("All threads finished. Stacking results...")
 # Stack partial results
 
-
+'''
 ptBinning = [0, 3.5, 5, 7.5, 10, 12, 14, 16, 18, 20, 30, 40, 50, 100]
 histext = ''
 hfile = ROOT.TFile( 'root_files/RecoFixThreadedSTACK_Sample'+sample+'.root', 'RECREATE')
@@ -757,4 +790,6 @@ for threadID in range(Nthreads):
 
 print("Saving stacked root file...")
 # Save endresult:
+# FIXME: DONT SAVE
 hfile.Write()
+'''
