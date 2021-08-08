@@ -12,3 +12,20 @@ class isoTrackPhotonPair:
             self.etaSC = ch.IsoTrack_eta[iTrack] + ch.IsoTrack_deltaEta[iTrack]
             self.phiSC = ch.IsoTrack_phi[iTrack] + ch.IsoTrack_deltaPhi[iTrack]
         self.pt = ch.IsoTrack_pt[iTrack]
+
+
+    def GetPt(self):
+        return self.pt
+    
+    def GetEta(self):
+        return self.eta
+    
+    def GetPhi(self):
+        return self.phi
+
+    def GetEtaSC(self):
+        return self.etaSC
+
+    def GetPhiSC(self):
+        return self.phiSC
+    
