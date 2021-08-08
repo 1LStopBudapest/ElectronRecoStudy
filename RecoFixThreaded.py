@@ -288,6 +288,7 @@ def RecoAndRecoFix(threadID, it0, it1, nevtcut, ch_common):
     histos['RecoFixedExtrapolEleDzAbs'] = HistInfo(hname = 'RecoFixedExtrapolEleDzAbs', sample = histext, binning = [40, 0, 15], histclass = ROOT.TH1F).make_hist()
 
 
+    histos['TrueElePtDxy2D'] = ROOT.TH2F('TrueElePtDxy2D_','TrueElePtDxy2D', len(ptBinning) -1, np.array(ptBinning), 40,0,15)
     histos['RecoFixedExtrapolPtDxy2D'] = ROOT.TH2F('RecoFixedExtrapolPtDxy2D_','RecoFixedExtrapolPtDxy2D', len(ptBinning) -1, np.array(ptBinning), 40,0,15)
     histos['RecoFixedPtDxy2D'] = ROOT.TH2F('RecoFixedPtDxy2D_','RecoFixedPtDxy2D', len(ptBinning) -1, np.array(ptBinning), 40,0,15)
 
@@ -390,12 +391,7 @@ def RecoAndRecoFix(threadID, it0, it1, nevtcut, ch_common):
 
             if( dRcut(fTrackPhoDistExtrapol, 0.2) ):
                 aPhotonIsoTrackExtrapolPairs.append( isoTrackPhotonPair(ch, i, bExtrapolate) )
-        '''
-        if(len(aPhotonIsoTrackPairs) < len(aPhotonIsoTrackExtrapolPairs)):
-            print 'SUCCESS '+str( len(aPhotonIsoTrackPairs))+ ' '+str( len(aPhotonIsoTrackExtrapolPairs))
-        if(len(aPhotonIsoTrackPairs) > len(aPhotonIsoTrackExtrapolPairs)):
-            print 'FAIL '+str( len(aPhotonIsoTrackPairs))+ ' '+str( len(aPhotonIsoTrackExtrapolPairs))
-        '''
+
 
 
         ## RECO STUDY ##
@@ -427,6 +423,8 @@ def RecoAndRecoFix(threadID, it0, it1, nevtcut, ch_common):
                     Fill1D(histos['TrueEleDz'], GenPart_dz)
                     Fill1D(histos['TrueEleDxyAbs'], abs(GenPart_dxy))
                     Fill1D(histos['TrueEleDzAbs'], abs(GenPart_dz))
+
+                    histos['TrueElePtDxy2D'].Fill( ch.GenPart_pt[i], abs(GenPart_dxy) )
 
                 # check if there is a reco ele / isotrack:
                 eledist = 100000
@@ -500,7 +498,7 @@ def RecoAndRecoFix(threadID, it0, it1, nevtcut, ch_common):
                     iPairIdx = -1
                     for j in range(len(aPhotonIsoTrackPairs)):
                         
-                        dist0 = dR(ch.GenPart_eta[i], aPhotonIsoTrackPairs[j].eta, ch.GenPart_phi[i], aPhotonIsoTrackPairs[j].phi ) 
+                        dist0 = dR(ch.GenPart_eta[i], aPhotonIsoTrackPairs[j].GetEta(), ch.GenPart_phi[i], aPhotonIsoTrackPairs[j].GetPhi() ) 
 
                         if( dist0 < fPairDist):
                             fPairDist = dist0
@@ -537,7 +535,7 @@ def RecoAndRecoFix(threadID, it0, it1, nevtcut, ch_common):
                         iPairIdx = -1
                         for j in range(len(aPhotonIsoTrackExtrapolPairs)):
                             
-                            dist0 = dR(ch.GenPart_eta[i], aPhotonIsoTrackExtrapolPairs[j].eta, ch.GenPart_phi[i], aPhotonIsoTrackExtrapolPairs[j].phi ) 
+                            dist0 = dR(ch.GenPart_eta[i], aPhotonIsoTrackExtrapolPairs[j].GetEta(), ch.GenPart_phi[i], aPhotonIsoTrackExtrapolPairs[j].GetPhi()) 
 
                             if( dist0 < fPairDist):
                                 fPairDist = dist0
@@ -797,6 +795,7 @@ savehistos['RecoFixedExtrapolEleDxyAbs'] = HistInfo(hname = 'RecoFixedExtrapolEl
 savehistos['RecoFixedExtrapolEleDzAbs'] = HistInfo(hname = 'RecoFixedExtrapolEleDzAbs', sample = histext, binning = [40, 0, 15], histclass = ROOT.TH1F).make_hist()
 
 
+savehistos['TrueElePtDxy2D'] = ROOT.TH2F('TrueElePtDxy2D_','TrueElePtDxy2D', len(ptBinning) -1, np.array(ptBinning), 40,0,15)
 savehistos['RecoFixedExtrapolPtDxy2D'] = ROOT.TH2F('RecoFixedExtrapolPtDxy2D_','RecoFixedExtrapolPtDxy2D', len(ptBinning) -1, np.array(ptBinning), 40,0,15)
 savehistos['RecoFixedPtDxy2D'] = ROOT.TH2F('RecoFixedPtDxy2D_','RecoFixedPtDxy2D', len(ptBinning) -1, np.array(ptBinning), 40,0,15)
 
