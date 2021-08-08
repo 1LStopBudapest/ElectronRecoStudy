@@ -46,6 +46,37 @@ def Plot2D(h, dir, xmin = 0, ymin =0, xmax=1, ymax=1, drawOption="hist", islogz=
     c.SaveAs(outputdirpath+"/"+htitle+".png")
     c.Close()
 
+def Plot2DEff(hnum, hden, dir, xmin = 0, ymin =0, xmax=1, ymax=1, drawOption="hist", islogz=False, canvasX=1400, canvasY=800):
+    for i in range(1,hnum.GetBin(hnum.GetNbinsX(), hnum.GetNbinsY()) +1, 1):
+        denom = hden.GetBinContent(i)
+        if(denom == 0):
+            hnum.SetBinContent(i, 0  )
+        else:
+            hnum.SetBinContent(i, hnum.GetBinContent(i) / denom )
+
+
+    hname = hnum.GetName()
+    htitle = hnum.GetTitle()
+    sname = hname.replace(htitle+"_", "")
+    outputdirpath = os.path.join(dir,"2DPlots/final",sname)
+    if not os.path.exists(outputdirpath):
+        os.makedirs(outputdirpath)
+
+    leg = ROOT.TLegend(0.5, 0.85, 0.9, 0.9)
+    leg.AddEntry(hnum, sname ,"l")
+
+    ROOT.gStyle.SetPaintTextFormat('4.1f')
+    ROOT.gStyle.SetOptStat(0)
+    c = ROOT.TCanvas('c', '', canvasX, canvasY)
+    if(islogz):
+        c.SetLogz()
+    fr = c.DrawFrame(xmin, ymin, xmax, ymax)
+    c.cd()
+    hnum.Draw(drawOption)
+    leg.Draw("SAME")
+    c.SaveAs(outputdirpath+"/"+htitle+".png")
+    c.Close()
+
 
 
 def plotEff(hnum, hden, xtitle, name, legTitle, sample, xmin = 0, ymin =0, xmax=50, ymax=1.2, ytitle='Eff'):
@@ -572,8 +603,8 @@ if("CommonReco" == channel or "All" == channel):
     plotStackedDistr(h_pass, h_total, colors, 'p_{T} [GeV]', 'electron_common_pT-distr', legTitle, sample,0,40)
 
 
-    Plot2D( f.Get("RecoFixedExtrapolPtDxy2D_") ,'./RecoFixPlots/'+sample,xmin = 0, ymin =0, xmax=100, ymax=15, drawOption="COLZ,text",islogz=True)
-    Plot2D( f.Get("RecoFixedPtDxy2D_") ,'./RecoFixPlots/'+sample,xmin = 0, ymin =0, xmax=100, ymax=15, drawOption="COLZ,text",islogz=True)
+    Plot2DEff( f.Get("RecoFixedExtrapolPtDxy2D_"), f.Get("TrueElePtDxy2D_") ,'./RecoFixPlots/'+sample,xmin = 0, ymin =0, xmax=100, ymax=15, drawOption="COLZ,text",islogz=True)
+    Plot2DEff( f.Get("RecoFixedPtDxy2D_"), f.Get("TrueElePtDxy2D_") ,'./RecoFixPlots/'+sample,xmin = 0, ymin =0, xmax=100, ymax=15, drawOption="COLZ,text",islogz=True)
     
     h_pass = {}
     h_total = {}
