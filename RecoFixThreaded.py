@@ -7,6 +7,7 @@ import threading
 
 #from RegSel import RegSel
 import numpy as np
+import Histograms
 
 sys.path.append('../')
 from Helper.HistInfo import HistInfo
@@ -24,17 +25,21 @@ def get_parser():
     '''
     import argparse
     argParser = argparse.ArgumentParser(description = "Argument parser")
-    argParser.add_argument('--sample',           action='store',                     type=str,            default='UL17_Full99mm',                                help="Which sample?" )
-    argParser.add_argument('--year',             action='store',                     type=int,            default=2016,                                             help="Which year?" )
+    argParser.add_argument('--sample',           action='store',                     type=str,            default='Sig_Displaced_350_335',                                help="Which sample?" )
+    argParser.add_argument('--signal',           action='store',                    type=str,            default="True",                                       help="calculate signal things" )
+    argParser.add_argument('--background',             action='store',                    type=str,            default="True",                        help="calculate BK things")
+    argParser.add_argument('--year',             action='store',                     type=str,            default="2016PostVFP",                                             help="Which year?" )
     argParser.add_argument('--startfile',        action='store',                     type=int,            default=0,                                                help="start from which root file like 0th or 10th etc?" )
     argParser.add_argument('--nfiles',           action='store',                     type=int,            default=-1,                                               help="No of files to run. -1 means all files" )
     argParser.add_argument('--nevents',           action='store',                    type=int,            default=-1,                                               help="No of events to run. -1 means all events" )
     argParser.add_argument('--Nthreads',           action='store',                    type=int,            default=-1,                                               help="How many CPU?" )
     argParser.add_argument('--channel',           action='store',                    type=str,            default='Electron',                                       help="Which lepton?" )
-    argParser.add_argument('--region',            action='store',                    type=str,            default='mesurement',                                     help="Which lepton?" )    
-    argParser.add_argument('--pJobs',             action='store',                    type=bool,            default=False,                                           help="using GPU parallel program or not" )
+    argParser.add_argument('--ptcut',             action='store',                    type=float,            default=3.5,                                           help="pt lower cut")
+    argParser.add_argument('--ptcutHigh',             action='store',                    type=float,            default=-1,                                           help="pt upper cut")
     argParser.add_argument('--vertex',             action='store',                    type=str,            default="True",                                           help="is there vertex info" )
-    argParser.add_argument('--extrapolate',             action='store',                    type=str,            default="True",                                           help="extrapolate isotrack to ECAL surface" )
+    argParser.add_argument('--extrapolate',             action='store',                    type=str,            default="False",                                           help="extrapolate isotrack to ECAL surface" )
+    argParser.add_argument('--v9',             action='store',                    type=str,            default="True",                                           help="use v9 nanoAOD")
+    argParser.add_argument('--binning',             action='store',                    type=int,            default=0,                                        help="which set of binning to use")
     return argParser
 
 options = get_parser().parse_args()
@@ -55,6 +60,18 @@ samples  = options.sample
 channel = options.channel
 nEvents = options.nevents
 year = options.year
+binningSet = options.binning
+if( options.signal == "True"):
+    bSignal = True
+else:
+    bSignal = False
+
+if( options.background == "True"):
+    bBackground = True
+else:
+    bBackground = False
+
+
 if( options.vertex == "True"):
     bUseVertex = True
 else:
@@ -65,23 +82,19 @@ if( options.extrapolate == "True"):
 else:
     bExtrapolate = False
 
+if( options.v9 == "True"):
+    bUseV9 = True
+else:
+    bUseV9 = False
+
+
 
 
 isData = True if ('Run' in samples or 'Data' in samples) else False
 
 lepOpt = 'Ele' if 'Electron' in channel else 'Mu'
-
-DataLumi = 1.0
-
-if year==2016:
-    samplelist = samples_2016
-    DataLumi = SampleChain.luminosity_2016
-elif year==2017:
-    samplelist = samples_2017
-    DataLumi = SampleChain.luminosity_2017
-else:
-    samplelist = samples_2018
-    DataLumi = SampleChain.luminosity_2018
+ptcut = int(options.ptcut) if options.ptcut.is_integer() else options.ptcut
+ptcutHigh = 999999 if -1 == options.ptcutHigh else (   int(options.ptcutHigh) if options.ptcutHigh.is_integer() else options.ptcutHigh  )  
 
 
 sample = samples
@@ -98,6 +111,7 @@ def dR(eta_gen, eta_reco, phi_gen, phi_reco):
 def dRcut(dist, cut = 0.1):
     return dist < cut
 
+'''
 def hasMomRecursive(i, pdgid, ch):
     if( ch.GenPart_genPartIdxMother[i] == -1):
         return False
@@ -105,6 +119,24 @@ def hasMomRecursive(i, pdgid, ch):
         return True
     else:
         return hasMomRecursive( ch.GenPart_genPartIdxMother[i], pdgid, ch )
+'''
+
+
+def hasMomRecursive(i, pdgid, ch):
+    particle = i
+    particle_j = particle
+    depth = 0
+    while(depth <= ch.nGenPart):
+        momidx = ch.GenPart_genPartIdxMother[particle_j]
+        if not (0 <= momidx < ch.nGenPart):
+            return False
+        elif momidx == particle or momidx == particle_j:
+            return False
+        elif(abs(ch.GenPart_pdgId[momidx]) == pdgid):
+            return True
+        particle_j = momidx
+        depth += 1
+    return False
 
 
 def extrapolateTrack(pt, eta, phi, charge, x0, y0, z0):
@@ -224,126 +256,32 @@ def getdz(i, ch):
 
 
 
+def getMiniIsoType(miniRelIso, pt):
+    # checks what cut the provided miniRelIso isolation passes
+    # -1: fail, 0: passes loose, 1: passes tight
+    # cuts calculated based on cuts in https://github.com/1LStopBudapest/Helper/blob/master/TreeVarSel.py#L282 for normal iso
+    # by weighting with cone area, calculated from different cone sizes (0.3 -> 0.2), weight: 0.42942652
+    absIso = miniRelIso*pt
+    if pt > 5 and pt < 25:
+        if absIso < 2.1471326:
+            return 1
+        elif absIso < 8.5885305:
+            return 0
+    elif pt >= 25:
+        if miniRelIso < 0.0858853:
+            return 1
+        elif miniRelIso < 0.3435412:
+            return 0
+    return -1
+
+
+
 # RECO #
-def RecoAndRecoFix(threadID, it0, it1, nevtcut, ch_common):
+def RecoAndRecoFix(threadID, it0, it1, nevtcut, ch_common, ptcut, ptcutHigh, binningSet):
 
     # Output histos - standalone for each Process
-    ptBinning = [0, 3.5, 5, 7.5, 10, 12, 14, 16, 18, 20, 30, 40, 50, 100]
-    histext = ''
     hfile = ROOT.TFile( 'root_files/RecoFixThreaded_Sample'+sample+'_Thread-'+str(threadID)+'.root', 'RECREATE')
-    histos = {}
-    histos['TrueElePt'] = HistInfo(hname = 'TrueElePt', sample = histext, binning = ptBinning, binopt = 'var', histclass = ROOT.TH1F).make_hist()
-    histos['TrueEleEta'] = HistInfo(hname = 'TrueEleEta', sample = histext, binning = [30, -3, 3], histclass = ROOT.TH1F).make_hist()
-    histos['TrueElePhi'] = HistInfo(hname = 'TrueElePhi', sample = histext, binning = [30, -4, 4], histclass = ROOT.TH1F).make_hist()
-    histos['TrueEleVtxx'] = HistInfo(hname = 'TrueEleVtxx', sample = histext, binning = [40, -1, 1], histclass = ROOT.TH1F).make_hist()
-    histos['TrueEleVtxy'] = HistInfo(hname = 'TrueEleVtxy', sample = histext, binning = [40, -1, 1], histclass = ROOT.TH1F).make_hist()
-    histos['TrueEleVtxz'] = HistInfo(hname = 'TrueEleVtxz', sample = histext, binning = [50, -50, 50], histclass = ROOT.TH1F).make_hist()
-    histos['TrueEleDxy'] = HistInfo(hname = 'TrueEleDxy', sample = histext, binning = [40, -6, 6], histclass = ROOT.TH1F).make_hist()
-    histos['TrueEleDz'] = HistInfo(hname = 'TrueEleDz', sample = histext, binning = [40, -6, 6], histclass = ROOT.TH1F).make_hist()
-    histos['TrueEleDxyAbs'] = HistInfo(hname = 'TrueEleDxyAbs', sample = histext, binning = [40, 0, 15], histclass = ROOT.TH1F).make_hist()
-    histos['TrueEleDzAbs'] = HistInfo(hname = 'TrueEleDzAbs', sample = histext, binning = [40, 0, 15], histclass = ROOT.TH1F).make_hist()
-
-    histos['RecoElePt'] = HistInfo(hname = 'RecoElePt', sample = histext, binning = ptBinning, binopt = 'var', histclass = ROOT.TH1F).make_hist()
-    histos['RecoEleEta'] = HistInfo(hname = 'RecoEleEta', sample = histext, binning = [30, -3, 3], histclass = ROOT.TH1F).make_hist()
-    histos['RecoElePhi'] = HistInfo(hname = 'RecoElePhi', sample = histext, binning = [30, -4, 4], histclass = ROOT.TH1F).make_hist()
-    histos['RecoEleVtxx'] = HistInfo(hname = 'RecoEleVtxx', sample = histext, binning = [30, -3, 3], histclass = ROOT.TH1F).make_hist()
-    histos['RecoEleVtxy'] = HistInfo(hname = 'RecoEleVtxy', sample = histext, binning = [30, -3, 3], histclass = ROOT.TH1F).make_hist()
-    histos['RecoEleVtxz'] = HistInfo(hname = 'RecoEleVtxz', sample = histext, binning = [30, -3, 3], histclass = ROOT.TH1F).make_hist()
-    histos['RecoEleDxy'] = HistInfo(hname = 'RecoEleDxy', sample = histext, binning = [40, -6, 6], histclass = ROOT.TH1F).make_hist()
-    histos['RecoEleDz'] = HistInfo(hname = 'RecoEleDz', sample = histext, binning = [40, -6, 6], histclass = ROOT.TH1F).make_hist()
-    histos['RecoEleDxyAbs'] = HistInfo(hname = 'RecoEleDxyAbs', sample = histext, binning = [40, 0, 15], histclass = ROOT.TH1F).make_hist()
-    histos['RecoEleDzAbs'] = HistInfo(hname = 'RecoEleDzAbs', sample = histext, binning = [40, 0, 15], histclass = ROOT.TH1F).make_hist()
-
-    histos['IsoTrackPt'] = HistInfo(hname = 'IsoTrackPt', sample = histext, binning = ptBinning, binopt = 'var', histclass = ROOT.TH1F).make_hist()
-    histos['IsoTrackEta'] = HistInfo(hname = 'IsoTrackEta', sample = histext, binning = [30, -3, 3], histclass = ROOT.TH1F).make_hist()
-    histos['IsoTrackPhi'] = HistInfo(hname = 'IsoTrackPhi', sample = histext, binning = [30, -4, 4], histclass = ROOT.TH1F).make_hist()
-    histos['IsoTrackVtxx'] = HistInfo(hname = 'IsoTrackVtxx', sample = histext, binning = [30, -3, 3], histclass = ROOT.TH1F).make_hist()
-    histos['IsoTrackVtxy'] = HistInfo(hname = 'IsoTrackVtxy', sample = histext, binning = [30, -3, 3], histclass = ROOT.TH1F).make_hist()
-    histos['IsoTrackVtxz'] = HistInfo(hname = 'IsoTrackVtxz', sample = histext, binning = [30, -3, 3], histclass = ROOT.TH1F).make_hist()
-    histos['IsoTrackDxy'] = HistInfo(hname = 'IsoTrackDxy', sample = histext, binning = [40, -6, 6], histclass = ROOT.TH1F).make_hist()
-    histos['IsoTrackDz'] = HistInfo(hname = 'IsoTrackDz', sample = histext, binning = [40, -6, 6], histclass = ROOT.TH1F).make_hist()
-    histos['IsoTrackDxyAbs'] = HistInfo(hname = 'IsoTrackDxyAbs', sample = histext, binning = [40, 0, 15], histclass = ROOT.TH1F).make_hist()
-    histos['IsoTrackDzAbs'] = HistInfo(hname = 'IsoTrackDzAbs', sample = histext, binning = [40, 0, 15], histclass = ROOT.TH1F).make_hist()
-
-    histos['RecoFixedElePt'] = HistInfo(hname = 'RecoFixedElePt', sample = histext, binning = ptBinning, binopt = 'var', histclass = ROOT.TH1F).make_hist()
-    histos['RecoFixedEleEta'] = HistInfo(hname = 'RecoFixedEleEta', sample = histext, binning = [30, -3, 3], histclass = ROOT.TH1F).make_hist()
-    histos['RecoFixedElePhi'] = HistInfo(hname = 'RecoFixedElePhi', sample = histext, binning = [30, -4, 4], histclass = ROOT.TH1F).make_hist()
-    histos['RecoFixedEleVtxx'] = HistInfo(hname = 'RecoFixedEleVtxx', sample = histext, binning = [30, -3, 3], histclass = ROOT.TH1F).make_hist()
-    histos['RecoFixedEleVtxy'] = HistInfo(hname = 'RecoFixedEleVtxy', sample = histext, binning = [30, -3, 3], histclass = ROOT.TH1F).make_hist()
-    histos['RecoFixedEleVtxz'] = HistInfo(hname = 'RecoFixedEleVtxz', sample = histext, binning = [30, -3, 3], histclass = ROOT.TH1F).make_hist()
-    histos['RecoFixedEleDxy'] = HistInfo(hname = 'RecoFixedEleDxy', sample = histext, binning = [40, -6, 6], histclass = ROOT.TH1F).make_hist()
-    histos['RecoFixedEleDz'] = HistInfo(hname = 'RecoFixedEleDz', sample = histext, binning = [40, -6, 6], histclass = ROOT.TH1F).make_hist()
-    histos['RecoFixedEleDxyAbs'] = HistInfo(hname = 'RecoFixedEleDxyAbs', sample = histext, binning = [40, 0, 15], histclass = ROOT.TH1F).make_hist()
-    histos['RecoFixedEleDzAbs'] = HistInfo(hname = 'RecoFixedEleDzAbs', sample = histext, binning = [40, 0, 15], histclass = ROOT.TH1F).make_hist()
-
-    histos['RecoFixedExtrapolElePt'] = HistInfo(hname = 'RecoFixedExtrapolElePt', sample = histext, binning = ptBinning, binopt = 'var', histclass = ROOT.TH1F).make_hist()
-    histos['RecoFixedExtrapolEleEta'] = HistInfo(hname = 'RecoFixedExtrapolEleEta', sample = histext, binning = [30, -3, 3], histclass = ROOT.TH1F).make_hist()
-    histos['RecoFixedExtrapolElePhi'] = HistInfo(hname = 'RecoFixedExtrapolElePhi', sample = histext, binning = [30, -4, 4], histclass = ROOT.TH1F).make_hist()
-    histos['RecoFixedExtrapolEleVtxx'] = HistInfo(hname = 'RecoFixedExtrapolEleVtxx', sample = histext, binning = [30, -3, 3], histclass = ROOT.TH1F).make_hist()
-    histos['RecoFixedExtrapolEleVtxy'] = HistInfo(hname = 'RecoFixedExtrapolEleVtxy', sample = histext, binning = [30, -3, 3], histclass = ROOT.TH1F).make_hist()
-    histos['RecoFixedExtrapolEleVtxz'] = HistInfo(hname = 'RecoFixedExtrapolEleVtxz', sample = histext, binning = [30, -3, 3], histclass = ROOT.TH1F).make_hist()
-    histos['RecoFixedExtrapolEleDxy'] = HistInfo(hname = 'RecoFixedExtrapolEleDxy', sample = histext, binning = [40, -6, 6], histclass = ROOT.TH1F).make_hist()
-    histos['RecoFixedExtrapolEleDz'] = HistInfo(hname = 'RecoFixedExtrapolEleDz', sample = histext, binning = [40, -6, 6], histclass = ROOT.TH1F).make_hist()
-    histos['RecoFixedExtrapolEleDxyAbs'] = HistInfo(hname = 'RecoFixedExtrapolEleDxyAbs', sample = histext, binning = [40, 0, 15], histclass = ROOT.TH1F).make_hist()
-    histos['RecoFixedExtrapolEleDzAbs'] = HistInfo(hname = 'RecoFixedExtrapolEleDzAbs', sample = histext, binning = [40, 0, 15], histclass = ROOT.TH1F).make_hist()
-
-
-    histos['TrueElePtDxy2D'] = ROOT.TH2F('TrueElePtDxy2D_','TrueElePtDxy2D', len(ptBinning) -1, np.array(ptBinning), 40,0,15)
-    histos['RecoFixedExtrapolPtDxy2D'] = ROOT.TH2F('RecoFixedExtrapolPtDxy2D_','RecoFixedExtrapolPtDxy2D', len(ptBinning) -1, np.array(ptBinning), 40,0,15)
-    histos['RecoFixedPtDxy2D'] = ROOT.TH2F('RecoFixedPtDxy2D_','RecoFixedPtDxy2D', len(ptBinning) -1, np.array(ptBinning), 40,0,15)
-
-
-    histos['TruePhotonPt'] = HistInfo(hname = 'TruePhotonPt', sample = histext, binning = ptBinning, binopt = 'var', histclass = ROOT.TH1F).make_hist()
-    histos['TruePhotonEta'] = HistInfo(hname = 'TruePhotonEta', sample = histext, binning = [30, -3, 3], histclass = ROOT.TH1F).make_hist()
-    histos['TruePhotonPhi'] = HistInfo(hname = 'TruePhotonPhi', sample = histext, binning = [30, -4, 4], histclass = ROOT.TH1F).make_hist()
-    histos['TruePhotonVtxx'] = HistInfo(hname = 'TruePhotonVtxx', sample = histext, binning = [30, -3, 3], histclass = ROOT.TH1F).make_hist()
-    histos['TruePhotonVtxy'] = HistInfo(hname = 'TruePhotonVtxy', sample = histext, binning = [30, -3, 3], histclass = ROOT.TH1F).make_hist()
-    histos['TruePhotonVtxz'] = HistInfo(hname = 'TruePhotonVtxz', sample = histext, binning = [30, -3, 3], histclass = ROOT.TH1F).make_hist()
-    histos['TruePhotonDxy'] = HistInfo(hname = 'TruePhotonDxy', sample = histext, binning = [40, -6, 6], histclass = ROOT.TH1F).make_hist()
-    histos['TruePhotonDz'] = HistInfo(hname = 'TruePhotonDz', sample = histext, binning = [40, -6, 6], histclass = ROOT.TH1F).make_hist()
-    histos['TruePhotonDxyAbs'] = HistInfo(hname = 'TruePhotonDxyAbs', sample = histext, binning = [40, 0, 15], histclass = ROOT.TH1F).make_hist()
-    histos['TruePhotonDzAbs'] = HistInfo(hname = 'TruePhotonDzAbs', sample = histext, binning = [40, 0, 15], histclass = ROOT.TH1F).make_hist()
-
-    histos['RecoPhotonPt'] = HistInfo(hname = 'RecoPhotonPt', sample = histext, binning = ptBinning, binopt = 'var', histclass = ROOT.TH1F).make_hist()
-    histos['RecoPhotonEta'] = HistInfo(hname = 'RecoPhotonEta', sample = histext, binning = [30, -3, 3], histclass = ROOT.TH1F).make_hist()
-    histos['RecoPhotonPhi'] = HistInfo(hname = 'RecoPhotonPhi', sample = histext, binning = [30, -4, 4], histclass = ROOT.TH1F).make_hist()
-    histos['RecoPhotonVtxx'] = HistInfo(hname = 'RecoPhotonVtxx', sample = histext, binning = [30, -3, 3], histclass = ROOT.TH1F).make_hist()
-    histos['RecoPhotonVtxy'] = HistInfo(hname = 'RecoPhotonVtxy', sample = histext, binning = [30, -3, 3], histclass = ROOT.TH1F).make_hist()
-    histos['RecoPhotonVtxz'] = HistInfo(hname = 'RecoPhotonVtxz', sample = histext, binning = [30, -3, 3], histclass = ROOT.TH1F).make_hist()
-    histos['RecoPhotonDxy'] = HistInfo(hname = 'RecoPhotonDxy', sample = histext, binning = [40, -6, 6], histclass = ROOT.TH1F).make_hist()
-    histos['RecoPhotonDz'] = HistInfo(hname = 'RecoPhotonDz', sample = histext, binning = [40, -6, 6], histclass = ROOT.TH1F).make_hist()
-    histos['RecoPhotonDxyAbs'] = HistInfo(hname = 'RecoPhotonDxyAbs', sample = histext, binning = [40, 0, 15], histclass = ROOT.TH1F).make_hist()
-    histos['RecoPhotonDzAbs'] = HistInfo(hname = 'RecoPhotonDzAbs', sample = histext, binning = [40, 0, 15], histclass = ROOT.TH1F).make_hist()
-
-
-    histos['RecoPhotonPlusIsoTrackPt'] = HistInfo(hname = 'RecoPhotonPlusIsoTrackPt', sample = histext, binning = ptBinning, binopt = 'var', histclass = ROOT.TH1F).make_hist()
-    histos['RecoPhotonPlusIsoTrackEta'] = HistInfo(hname = 'RecoPhotonPlusIsoTrackEta', sample = histext, binning = [30, -3, 3], histclass = ROOT.TH1F).make_hist()
-    histos['RecoPhotonPlusIsoTrackPhi'] = HistInfo(hname = 'RecoPhotonPlusIsoTrackPhi', sample = histext, binning = [30, -4, 4], histclass = ROOT.TH1F).make_hist()
-    histos['RecoPhotonPlusIsoTrackDxyAbs'] = HistInfo(hname = 'RecoPhotonPlusIsoTrackDxyAbs', sample = histext, binning = [40, 0, 15], histclass = ROOT.TH1F).make_hist()
-    histos['RecoPhotonPlusIsoTrackDzAbs'] = HistInfo(hname = 'RecoPhotonPlusIsoTrackDzAbs', sample = histext, binning = [40, 0, 15], histclass = ROOT.TH1F).make_hist()
-
-    histos['dRControlPlot2D'] = HistInfo(hname = 'dRControlPlot2D', sample = histext, binning = [[40, 0, 2],[40, 0, 2]], histclass = ROOT.TH2F).make_hist2D()
-
-    histos['TrueBackgroundPt'] = HistInfo(hname = 'TrueBackgroundPt', sample = histext, binning = ptBinning, binopt = 'var', histclass = ROOT.TH1F).make_hist()
-    histos['TrueBackgroundEta'] = HistInfo(hname = 'TrueBackgroundEta', sample = histext, binning = [30, -3, 3], histclass = ROOT.TH1F).make_hist()
-    histos['TrueBackgroundPhi'] = HistInfo(hname = 'TrueBackgroundPhi', sample = histext, binning = [30, -4, 4], histclass = ROOT.TH1F).make_hist()
-    histos['TrueBackgroundDxyAbs'] = HistInfo(hname = 'TrueBackgroundDxyAbs', sample = histext, binning = [40, 0, 15], histclass = ROOT.TH1F).make_hist()
-    histos['TrueBackgroundDzAbs'] = HistInfo(hname = 'TrueBackgroundDzAbs', sample = histext, binning = [40, 0, 15], histclass = ROOT.TH1F).make_hist()
-
-    histos['RejectBackgroundPt'] = HistInfo(hname = 'RejectBackgroundPt', sample = histext, binning = ptBinning, binopt = 'var', histclass = ROOT.TH1F).make_hist()
-    histos['RejectBackgroundEta'] = HistInfo(hname = 'RejectBackgroundEta', sample = histext, binning = [30, -3, 3], histclass = ROOT.TH1F).make_hist()
-    histos['RejectBackgroundPhi'] = HistInfo(hname = 'RejectBackgroundPhi', sample = histext, binning = [30, -4, 4], histclass = ROOT.TH1F).make_hist()
-    histos['RejectBackgroundDxyAbs'] = HistInfo(hname = 'RejectBackgroundDxyAbs', sample = histext, binning = [40, 0, 15], histclass = ROOT.TH1F).make_hist()
-    histos['RejectBackgroundDzAbs'] = HistInfo(hname = 'RejectBackgroundDzAbs', sample = histext, binning = [40, 0, 15], histclass = ROOT.TH1F).make_hist()
-
-    histos['RejectBackgroundRecoFixPt'] = HistInfo(hname = 'RejectBackgroundRecoFixPt', sample = histext, binning = ptBinning, binopt = 'var', histclass = ROOT.TH1F).make_hist()
-    histos['RejectBackgroundRecoFixEta'] = HistInfo(hname = 'RejectBackgroundRecoFixEta', sample = histext, binning = [30, -3, 3], histclass = ROOT.TH1F).make_hist()
-    histos['RejectBackgroundRecoFixPhi'] = HistInfo(hname = 'RejectBackgroundRecoFixPhi', sample = histext, binning = [30, -4, 4], histclass = ROOT.TH1F).make_hist()
-    histos['RejectBackgroundRecoFixDxyAbs'] = HistInfo(hname = 'RejectBackgroundRecoFixDxyAbs', sample = histext, binning = [40, 0, 15], histclass = ROOT.TH1F).make_hist()
-    histos['RejectBackgroundRecoFixDzAbs'] = HistInfo(hname = 'RejectBackgroundRecoFixDzAbs', sample = histext, binning = [40, 0, 15], histclass = ROOT.TH1F).make_hist()
-
-    histos['AllTruePhotonPt'] = HistInfo(hname = 'AllTruePhotonPt', sample = histext, binning = ptBinning, binopt = 'var', histclass = ROOT.TH1F).make_hist()
-    histos['AllRecoPhotonPt'] = HistInfo(hname = 'AllRecoPhotonPt', sample = histext, binning = ptBinning, binopt = 'var', histclass = ROOT.TH1F).make_hist()
+    histos = Histograms.SpawnHistograms(binningSet)
 
     extrapolate_log = open("logs/extrapolate-log-t"+str(threadID),"w")
     # RECO CALCULATION #
@@ -358,14 +296,53 @@ def RecoAndRecoFix(threadID, it0, it1, nevtcut, ch_common):
 
 
         for i in range(ch.nPhoton):
-            Fill1D(histos['AllRecoPhotonPt'], ch.Photon_pt[i])
+            Fill1D(histos['AllRecoPhoton_Pt'], ch.Photon_pt[i])
+
+        # LowPtEle statistics
+        if(bUseV9):
+            for i in range(ch.nLowPtElectron):
+                if(ch.LowPtElectron_pt[i] >= ptcut):
+                    Fill1D(histos['LowPtEle_Pt'], ch.LowPtElectron_pt[i])
+                    Fill1D(histos['LowPtEle_Eta'], ch.LowPtElectron_eta[i])
+                    Fill1D(histos['LowPtEle_Phi'], ch.LowPtElectron_phi[i])
+                    Fill1D(histos['LowPtEle_DxyAbs'], abs(ch.LowPtElectron_dxy[i]))
+                    Fill1D(histos['LowPtEle_DzAbs'], abs(ch.LowPtElectron_dz[i]))
+                    
+                    Fill1D(histos['LowPtEleBDTID'], ch.LowPtElectron_ID[i])
+                    Fill1D(histos['LowPtEleBDTembeddedID'], ch.LowPtElectron_embeddedID[i])
+                    histos['LowPtEleBDT2D'].Fill(ch.LowPtElectron_ID[i], ch.LowPtElectron_embeddedID[i])
+
+                    histos['LowPtEleBDT2D'].Fill(ch.LowPtElectron_ID[i], ch.LowPtElectron_embeddedID[i])
+
+                    histos['LowPtEle_BDT_RelIso_2D'].Fill(ch.LowPtElectron_ID[i], ch.LowPtElectron_miniPFRelIso_all[i])
+                    histos['LowPtEle_BDT_AbsIso_2D'].Fill(ch.LowPtElectron_ID[i], ch.LowPtElectron_miniPFRelIso_all[i] * ch.LowPtElectron_pt[i])
+                    if(ch.LowPtElectron_pt[i] < 3.5):
+                        histos['LowPtEle_BDT_AbsIso_2D_ptmin_3.5'].Fill(ch.LowPtElectron_ID[i], ch.LowPtElectron_miniPFRelIso_all[i] * ch.LowPtElectron_pt[i])
+                    elif(ch.LowPtElectron_pt[i] < 10):
+                        histos['LowPtEle_BDT_AbsIso_2D_pt3.5_10'].Fill(ch.LowPtElectron_ID[i], ch.LowPtElectron_miniPFRelIso_all[i] * ch.LowPtElectron_pt[i])
+                    elif(ch.LowPtElectron_pt[i] < 25):
+                        histos['LowPtEle_BDT_AbsIso_2D_pt10_25'].Fill(ch.LowPtElectron_ID[i], ch.LowPtElectron_miniPFRelIso_all[i] * ch.LowPtElectron_pt[i])
+
+                    
+                    miniIsoID = getMiniIsoType(ch.LowPtElectron_miniPFRelIso_all[i],ch.LowPtElectron_pt[i] )
+                    if( miniIsoID == 0 or miniIsoID == 1):
+                        histos['LowPtEle_BDT_RelIso_2D_Loose'].Fill(ch.LowPtElectron_ID[i], ch.LowPtElectron_miniPFRelIso_all[i])
+                    if(miniIsoID == 1):
+                        histos['LowPtEle_BDT_RelIso_2D_Tight'].Fill(ch.LowPtElectron_ID[i], ch.LowPtElectron_miniPFRelIso_all[i])
+
 
 
         # create isotrack - Photon pairs for extended reco
         aPhotonIsoTrackPairs = []
+        aPhotonIsoTrackPairs_CBLoose = []
+        aPhotonIsoTrackPairs_CBMedium = []
+        aPhotonIsoTrackPairs_CBTight = []
+        aPhotonIsoTrackPairs_MVA90 = []
+        aPhotonIsoTrackPairs_MVA80 = []
         aPhotonIsoTrackExtrapolPairs = []
         for i in range(ch.nIsoTrack):
-            fTrackPhoDist = 100000
+            # [Fail,CBLoose,CBMed,CBTight,MVA90,MVA80]
+            fTrackPhoDist = [100000,100000,100000,100000,100000,100000,100000]
             fTrackPhoDistExtrapol = 100000
             dist0 = 100000
             for j in range(ch.nPhoton):
@@ -374,334 +351,1577 @@ def RecoAndRecoFix(threadID, it0, it1, nevtcut, ch_common):
                 gencomp_phi = ch.IsoTrack_phi[i]
                 dist0 = dR(gencomp_eta, ch.Photon_eta[j], gencomp_phi, ch.Photon_phi[j] )
 
-                if( dist0 < fTrackPhoDist):
-                    fTrackPhoDist = dist0
-
                 if( bExtrapolate):
                     gencomp_eta = ch.IsoTrack_eta[i] + ch.IsoTrack_deltaEta[i]
                     gencomp_phi = ch.IsoTrack_phi[i] + ch.IsoTrack_deltaPhi[i]
                     dist0 = dR(gencomp_eta, ch.Photon_eta[j], gencomp_phi, ch.Photon_phi[j] )
 
-                    if( dist0 < fTrackPhoDistExtrapol):
-                        fTrackPhoDistExtrapol = dist0
 
-            
-            if( dRcut(fTrackPhoDist, 0.2) ):
-                aPhotonIsoTrackPairs.append( isoTrackPhotonPair(ch, i, bExtrapolate) )
+                if( dist0 < fTrackPhoDist[0]):
+                    fTrackPhoDist[0] = dist0
 
-            if( dRcut(fTrackPhoDistExtrapol, 0.2) ):
-                aPhotonIsoTrackExtrapolPairs.append( isoTrackPhotonPair(ch, i, bExtrapolate) )
+                for iCut in range(1,4,1):
+                    if(ch.Photon_cutBased[j] >= iCut and dist0 < fTrackPhoDist[iCut]):
+                        fTrackPhoDist[iCut] = dist0
+
+                if( ch.Photon_mvaID_WP90[j] and dist0 < fTrackPhoDist[4]):
+                    fTrackPhoDist[4] = dist0
+                if( ch.Photon_mvaID_WP80[j] and dist0 < fTrackPhoDist[5]):
+                    fTrackPhoDist[5] = dist0
+
+            # FIXME!!!!!! LIKE THIS, EXTRAPOLATING WILL NOT BE RECOGNIZED IN THE ID, BUT ALSO WON'T GIVE AN ERRORMESSAGE ABOUT IT!!!
+            if( dRcut(fTrackPhoDist[0], 0.2) ):
+                aPhotonIsoTrackPairs.append( isoTrackPhotonPair(ch, i, j, bExtrapolate) )
+            if( dRcut(fTrackPhoDist[1], 0.2) ):
+                aPhotonIsoTrackPairs_CBLoose.append( isoTrackPhotonPair(ch, i, j, bExtrapolate) )
+            if( dRcut(fTrackPhoDist[2], 0.2) ):
+                aPhotonIsoTrackPairs_CBMedium.append( isoTrackPhotonPair(ch, i, j, bExtrapolate) )
+            if( dRcut(fTrackPhoDist[3], 0.2) ):
+                aPhotonIsoTrackPairs_CBTight.append( isoTrackPhotonPair(ch, i, j, bExtrapolate) )
+            if( dRcut(fTrackPhoDist[4], 0.2) ):
+                aPhotonIsoTrackPairs_MVA90.append( isoTrackPhotonPair(ch, i, j, bExtrapolate) )
+            if( dRcut(fTrackPhoDist[5], 0.2) ):
+                aPhotonIsoTrackPairs_MVA80.append( isoTrackPhotonPair(ch, i, j, bExtrapolate) )
+
+            #if( dRcut(fTrackPhoDistExtrapol, 0.2) ):
+            #    aPhotonIsoTrackExtrapolPairs.append( isoTrackPhotonPair(ch, i, j, bExtrapolate) )
+
 
 
 
         ## RECO STUDY ##
-        for i in range(ch.nGenPart):
 
-            ##  photon pt test
-            if(abs(ch.GenPart_pdgId[i]) == 22):
-                Fill1D(histos['AllTruePhotonPt'], ch.GenPart_pt[i])
+        bdtcuts = [0,1,2,2.5,3,4,5]
+        if(bSignal):
+            for i in range(ch.nGenPart):
+
+                ##  photon pt test
+                if(abs(ch.GenPart_pdgId[i]) == 22):
+                    Fill1D(histos['AllTruePhoton_Pt'], ch.GenPart_pt[i])
 
 
-            # electron, pt eta cuts, status 1, with a stop mother somewhere in mother history
-            # pt >= 15, |eta| < 1
-            # and abs(ch.GenPart_vx[i]) < 0.2 and abs(ch.GenPart_vy[i]) < 0.2
-            if( abs(ch.GenPart_pdgId[i]) == 11 and ch.GenPart_pt[i] >= 5  and abs(ch.GenPart_eta[i]) <= 2.5 and ch.GenPart_status[i] == 1 and hasMomRecursive(i, 1000006, ch) ):
+                # electron, pt eta cuts, status 1, with a stop mother somewhere in mother history
+                # pt >= 15, |eta| < 1
+                # and abs(ch.GenPart_vx[i]) < 0.2 and abs(ch.GenPart_vy[i]) < 0.2
+                # hasMomRecursive(i, 1000006, ch) stop, changed to W (24)
+                if(  abs(ch.GenPart_pdgId[i]) == 11 and ptcut <= ch.GenPart_pt[i] <= ptcutHigh  and abs(ch.GenPart_eta[i]) <= 2.5 and ch.GenPart_status[i] == 1 and hasMomRecursive(i, 24, ch)):
 
+                    if(bUseVertex):
+                        GenPart_dxy = getdxy(i, ch)
+                        GenPart_dz = getdz(i, ch)
+
+                    Fill1D(histos['TrueEle_Pt'],ch.GenPart_pt[i])
+                    Fill1D(histos['TrueEle_Eta'],ch.GenPart_eta[i])
+                    Fill1D(histos['TrueEle_Phi'],ch.GenPart_phi[i])
+
+                    if(bUseVertex):
+                        Fill1D(histos['TrueEle_Dxy'], GenPart_dxy)
+                        Fill1D(histos['TrueEle_Dz'], GenPart_dz)
+                        Fill1D(histos['TrueEle_DxyAbs'], abs(GenPart_dxy))
+                        Fill1D(histos['TrueEle_DzAbs'], abs(GenPart_dz))
+
+                        # WATCHME: overflow added to last pt bin here
+                        ovpt = ch.GenPart_pt[i]
+                        ovdxy = abs(GenPart_dxy)
+                        if( ovpt > 100):
+                            ovpt = 99
+                        if( ovdxy > 15):
+                            ovdxy = 14.8
+                        histos['TrueElePtDxy2D'].Fill( ovpt, ovdxy )
+
+
+
+
+                    #########################
+                    ## SIGNAL RECO METHODS ##
+                    #########################
+
+
+
+                    # Standard Reco:
+                    # check if there is a reco ele / isotrack:
+                    bRecoAsStandard = False
+                    abRecoAsStandardCutBased = [False, False, False, False]
+                    abRecoAsStandardMVA = [False, False, False]
+                    eledist = 100000
+                    eleIdx = -1
+                    idx0 = -1
+                    for j in range(ch.nElectron):
+
+                        dist0 = dR(ch.GenPart_eta[i], ch.Electron_eta[j], ch.GenPart_phi[i], ch.Electron_phi[j] ) 
+                        if( dist0 < eledist):
+                            eledist = dist0
+                            idx0 = j
+                    if( dRcut(eledist) ):
+                        bRecoAsStandard = True
+                        eleIdx = idx0
+                    # save info:
+                    foundStandardElectron = eleIdx # save this for overlap study: if -1, no overlap, if not -1, there was an overlap
+
+
+                    # Standard Reco with cutbased
+                    for iCut in range(4):
+                        eledist = 100000
+                        eleIdx = -1
+                        idx0 = -1
+                        for j in range(ch.nElectron):
+                            #if( ch.Electron_cutBased[j] >> iCut & 1):
+                            #if(ch.Electron_cutBased[j] > iCut):   <-- this one contains isolation
+
+                            if(eleVID( ch.Electron_vidNestedWPBitmap[j], iCut + 1, removedCuts=['pfRelIso03_all'])): #cutbased id: 0:fail, 1:veto, 2:loose, 3:medium, 4:tight
+
+                                dist0 = dR(ch.GenPart_eta[i], ch.Electron_eta[j], ch.GenPart_phi[i], ch.Electron_phi[j] ) 
+                                if( dist0 < eledist):
+                                    eledist = dist0
+                                    idx0 = j
+                        if( dRcut(eledist) ):
+                            abRecoAsStandardCutBased[iCut] = True
+
+
+
+                    # Standard Reco with MVAs
+                    # check if there is a reco ele / isotrack:
+                    eledist = 100000
+                    eleIdx = -1
+                    idx0 = -1
+                    for j in range(ch.nElectron):
+                        if( ch.Electron_mvaFall17V2noIso_WPL[j]):
+                            dist0 = dR(ch.GenPart_eta[i], ch.Electron_eta[j], ch.GenPart_phi[i], ch.Electron_phi[j] ) 
+                            if( dist0 < eledist):
+                                eledist = dist0
+                                idx0 = j
+                    if( dRcut(eledist) ):
+                        abRecoAsStandardMVA[0] = True
+
+                    eledist = 100000
+                    eleIdx = -1
+                    idx0 = -1
+                    for j in range(ch.nElectron):
+                        if( ch.Electron_mvaFall17V2noIso_WP90[j]):
+                            dist0 = dR(ch.GenPart_eta[i], ch.Electron_eta[j], ch.GenPart_phi[i], ch.Electron_phi[j] ) 
+                            if( dist0 < eledist):
+                                eledist = dist0
+                                idx0 = j
+                    if( dRcut(eledist) ):
+                        abRecoAsStandardMVA[1] = True
+
+                    eledist = 100000
+                    eleIdx = -1
+                    idx0 = -1
+                    for j in range(ch.nElectron):
+                        if( ch.Electron_mvaFall17V2noIso_WP80[j]):
+                            dist0 = dR(ch.GenPart_eta[i], ch.Electron_eta[j], ch.GenPart_phi[i], ch.Electron_phi[j] ) 
+                            if( dist0 < eledist):
+                                eledist = dist0
+                                idx0 = j
+                    if( dRcut(eledist) ):
+                        abRecoAsStandardMVA[2] = True
+
+
+
+
+                    # V9: LowPt Electron search included
+                    bRecoAsLowPt = False
+                    abRecoAsLowPtBDT = [False] * len(bdtcuts)
+                    bdtidx = [-1] * len(bdtcuts)
+                    bdtdist = [100000] * len(bdtcuts)
+                    if(bUseV9):
+                        eledist = 100000
+                        eleIdx = -1
+                        idx0 = -1
+                        for j in range(ch.nLowPtElectron):
+
+                            dist0 = dR(ch.GenPart_eta[i], ch.LowPtElectron_eta[j], ch.GenPart_phi[i], ch.LowPtElectron_phi[j] ) 
+                            if( dist0 < eledist):
+                                eledist = dist0
+                                idx0 = j
+                            for k in range(len(bdtcuts)):
+                                if(bdtdist[k] > dist0 and ch.LowPtElectron_ID[j] > bdtcuts[k]):
+                                    bdtdist[k] = dist0
+                                    bdtidx[k] = j
+
+                        if( dRcut(eledist) ):
+                            bRecoAsLowPt = True
+                            eleIdx = idx0 
+                        # save info:
+                        foundLowPtElectron = eleIdx  # save this for later overlap studies with extended
+
+                        for k in range(len(bdtcuts)):
+                            if(dRcut(bdtdist[k])):
+                                abRecoAsLowPtBDT[k] = True
+
+
+
+                    # IPP reco 2.0
+                    # match to isotrack-photon pairs -> then the isotrack is the detected ele
+
+
+                    bRecoAsIPP = False
+                    abRecoAsIPPCutBased = [False,False,False]
+                    abRecoAsIPPMVA = [False,False]
+                    fPairDist = 100000
+                    iPairIdx = -1
+                    for j in range(len(aPhotonIsoTrackPairs)):
+                        dist0 = dR(ch.GenPart_eta[i], aPhotonIsoTrackPairs[j].GetEta(), ch.GenPart_phi[i], aPhotonIsoTrackPairs[j].GetPhi() ) 
+                        if( dist0 < fPairDist):
+                            fPairDist = dist0
+                            iPairIdx = j
+                    if( dRcut(fPairDist, 0.2) ):
+                        bRecoAsIPP = True
+
+                    fPairDist = 100000
+                    iPairIdx = -1
+                    for j in range(len(aPhotonIsoTrackPairs_CBLoose)):
+                        dist0 = dR(ch.GenPart_eta[i], aPhotonIsoTrackPairs_CBLoose[j].GetEta(), ch.GenPart_phi[i], aPhotonIsoTrackPairs_CBLoose[j].GetPhi() ) 
+                        if( dist0 < fPairDist):
+                            fPairDist = dist0
+                            iPairIdx = j
+                    if( dRcut(fPairDist, 0.2) ):
+                        abRecoAsIPPCutBased[0] = True
+
+                    fPairDist = 100000
+                    iPairIdx = -1
+                    for j in range(len(aPhotonIsoTrackPairs_CBMedium)):
+                        dist0 = dR(ch.GenPart_eta[i], aPhotonIsoTrackPairs_CBMedium[j].GetEta(), ch.GenPart_phi[i], aPhotonIsoTrackPairs_CBMedium[j].GetPhi() ) 
+                        if( dist0 < fPairDist):
+                            fPairDist = dist0
+                            iPairIdx = j
+                    if( dRcut(fPairDist, 0.2) ):
+                        abRecoAsIPPCutBased[1] = True
+
+
+                    fPairDist = 100000
+                    iPairIdx = -1
+                    for j in range(len(aPhotonIsoTrackPairs_CBTight)):
+                        dist0 = dR(ch.GenPart_eta[i], aPhotonIsoTrackPairs_CBTight[j].GetEta(), ch.GenPart_phi[i], aPhotonIsoTrackPairs_CBTight[j].GetPhi() ) 
+                        if( dist0 < fPairDist):
+                            fPairDist = dist0
+                            iPairIdx = j
+                    if( dRcut(fPairDist, 0.2) ):
+                        abRecoAsIPPCutBased[2] = True
+
+
+                    fPairDist = 100000
+                    iPairIdx = -1
+                    for j in range(len(aPhotonIsoTrackPairs_MVA90)):
+                        dist0 = dR(ch.GenPart_eta[i], aPhotonIsoTrackPairs_MVA90[j].GetEta(), ch.GenPart_phi[i], aPhotonIsoTrackPairs_MVA90[j].GetPhi() ) 
+                        if( dist0 < fPairDist):
+                            fPairDist = dist0
+                            iPairIdx = j
+                    if( dRcut(fPairDist, 0.2) ):
+                        abRecoAsIPPMVA[0] = True
+
+                    fPairDist = 100000
+                    iPairIdx = -1
+                    for j in range(len(aPhotonIsoTrackPairs_MVA80)):
+                        dist0 = dR(ch.GenPart_eta[i], aPhotonIsoTrackPairs_MVA80[j].GetEta(), ch.GenPart_phi[i], aPhotonIsoTrackPairs_MVA80[j].GetPhi() ) 
+                        if( dist0 < fPairDist):
+                            fPairDist = dist0
+                            iPairIdx = j
+                    if( dRcut(fPairDist, 0.2) ):
+                        abRecoAsIPPMVA[1] = True
+
+                    
+
+
+
+                    ############################
+                    ## FILL SIGNAL HISTOGRAMS ##
+                    ############################
+
+
+                    if( bRecoAsStandard):
+                        # Fill just standard
+                        Fill1D(histos['RecoStandardEle_Pt'], ch.GenPart_pt[i])
+                        Fill1D(histos['RecoStandardEle_Eta'], ch.GenPart_eta[i])
+                        Fill1D(histos['RecoStandardEle_Phi'], ch.GenPart_phi[i])
+
+                        if(bUseVertex):
+                            Fill1D(histos['RecoStandardEle_Dxy'], GenPart_dxy)
+                            Fill1D(histos['RecoStandardEle_Dz'], GenPart_dz)
+                            Fill1D(histos['RecoStandardEle_DxyAbs'], abs(GenPart_dxy))
+                            Fill1D(histos['RecoStandardEle_DzAbs'], abs(GenPart_dz))
+
+                        # Fill standard || LowPt -> moved to end
+
+
+                        # Fill extended (standard || track/pho pair) (with/without extrapol)
+                        Fill1D(histos['RecoExtendedEle_Pt'], ch.GenPart_pt[i])
+                        Fill1D(histos['RecoExtendedEle_Eta'], ch.GenPart_eta[i])
+                        Fill1D(histos['RecoExtendedEle_Phi'], ch.GenPart_phi[i])
+
+                        Fill1D(histos['RecoExtended+ExtrapolEle_Pt'], ch.GenPart_pt[i])
+                        Fill1D(histos['RecoExtended+ExtrapolEle_Eta'], ch.GenPart_eta[i])
+                        Fill1D(histos['RecoExtended+ExtrapolEle_Phi'], ch.GenPart_phi[i])
+
+                        if(bUseVertex):
+                            Fill1D(histos['RecoExtendedEle_Dxy'], GenPart_dxy)
+                            Fill1D(histos['RecoExtendedEle_Dz'], GenPart_dz)
+                            Fill1D(histos['RecoExtendedEle_DxyAbs'], abs(GenPart_dxy))
+                            Fill1D(histos['RecoExtendedEle_DzAbs'], abs(GenPart_dz))
+
+                            Fill1D(histos['RecoExtended+ExtrapolEle_Dxy'], GenPart_dxy)
+                            Fill1D(histos['RecoExtended+ExtrapolEle_Dz'], GenPart_dz)
+                            Fill1D(histos['RecoExtended+ExtrapolEle_DxyAbs'], abs(GenPart_dxy))
+                            Fill1D(histos['RecoExtended+ExtrapolEle_DzAbs'], abs(GenPart_dz))
+
+
+                            if( ovpt > 100):
+                                ovpt = 99
+                            if( ovdxy > 15):
+                                ovdxy = 14.8
+                            histos['ExtendedRecoExtrapolPtDxy2D'].Fill( ovpt, ovdxy )
+                            histos['ExtendedRecoPtDxy2D'].Fill( ovpt, ovdxy )
+
+
+
+
+                        # Fill Extended (standard || track/pho pair) || lowpt
+                        Fill1D(histos['RecoExtended||LowPtEle_Pt'], ch.GenPart_pt[i])
+                        Fill1D(histos['RecoExtended||LowPtEle_Eta'], ch.GenPart_eta[i])
+                        Fill1D(histos['RecoExtended||LowPtEle_Phi'], ch.GenPart_phi[i])
+
+                        # extended+lowpt+extrapol doesnt exist yet
+                        #Fill1D(histos['ExtendedRecoWithLowPtExtrapolEle_Pt'], ch.GenPart_pt[i])
+                        #Fill1D(histos['ExtendedRecoWithLowPtExtrapolEle_Eta'], ch.GenPart_eta[i])
+                        #Fill1D(histos['ExtendedRecoWithLowPtExtrapolEle_Phi'], ch.GenPart_phi[i])
+                        if(bUseVertex):
+                            Fill1D(histos['RecoExtended||LowPtEle_Dxy'], GenPart_dxy)
+                            Fill1D(histos['RecoExtended||LowPtEle_Dz'], GenPart_dz)
+                            Fill1D(histos['RecoExtended||LowPtEle_DxyAbs'], abs(GenPart_dxy))
+                            Fill1D(histos['RecoExtended||LowPtEle_DzAbs'], abs(GenPart_dz))
+
+
+                    if(abRecoAsStandardCutBased[0]):
+                        Fill1D(histos['RecoStandardEle_CBVeto_Pt'], ch.GenPart_pt[i])
+                        if(bUseVertex):
+                            Fill1D(histos['RecoStandardEle_CBVeto_DxyAbs'], abs(GenPart_dxy))
+                    if(abRecoAsStandardCutBased[1]):
+                        Fill1D(histos['RecoStandardEle_CBLoose_Pt'], ch.GenPart_pt[i])
+                        if(bUseVertex):
+                            Fill1D(histos['RecoStandardEle_CBLoose_DxyAbs'], abs(GenPart_dxy))
+                    if( abRecoAsStandardCutBased[2] ):
+                        Fill1D(histos['RecoStandardEle_CBMedium_Pt'], ch.GenPart_pt[i])
+                        if(bUseVertex):
+                            Fill1D(histos['RecoStandardEle_CBMedium_DxyAbs'], abs(GenPart_dxy))
+                    if( abRecoAsStandardCutBased[3] ):
+                        Fill1D(histos['RecoStandardEle_CBTight_Pt'], ch.GenPart_pt[i])
+                        if(bUseVertex):
+                            Fill1D(histos['RecoStandardEle_CBTight_DxyAbs'], abs(GenPart_dxy))
+
+
+                    if(abRecoAsStandardMVA[0]):
+                        Fill1D(histos['RecoStandardEle_mvaNoIsoWPL_Pt'], ch.GenPart_pt[i])
+                        Fill1D(histos['RecoStandardEle_mvaNoIsoWPL_Eta'], ch.GenPart_eta[i])
+                        Fill1D(histos['RecoStandardEle_mvaNoIsoWPL_Phi'], ch.GenPart_phi[i])
+
+                        if(bUseVertex):
+                            Fill1D(histos['RecoStandardEle_mvaNoIsoWPL_DxyAbs'], abs(GenPart_dxy))
+                            Fill1D(histos['RecoStandardEle_mvaNoIsoWPL_DzAbs'], abs(GenPart_dz))
+
+                    if(abRecoAsStandardMVA[1]):
+                        Fill1D(histos['RecoStandardEle_mvaNoIsoWP90_Pt'], ch.GenPart_pt[i])
+                        Fill1D(histos['RecoStandardEle_mvaNoIsoWP90_Eta'], ch.GenPart_eta[i])
+                        Fill1D(histos['RecoStandardEle_mvaNoIsoWP90_Phi'], ch.GenPart_phi[i])
+
+                        if(bUseVertex):
+                            Fill1D(histos['RecoStandardEle_mvaNoIsoWP90_DxyAbs'], abs(GenPart_dxy))
+                            Fill1D(histos['RecoStandardEle_mvaNoIsoWP90_DzAbs'], abs(GenPart_dz))
+
+                    if(abRecoAsStandardMVA[2]):
+                        Fill1D(histos['RecoStandardEle_mvaNoIsoWP80_Pt'], ch.GenPart_pt[i])
+                        Fill1D(histos['RecoStandardEle_mvaNoIsoWP80_Eta'], ch.GenPart_eta[i])
+                        Fill1D(histos['RecoStandardEle_mvaNoIsoWP80_Phi'], ch.GenPart_phi[i])
+
+                        if(bUseVertex):
+                            Fill1D(histos['RecoStandardEle_mvaNoIsoWP80_DxyAbs'], abs(GenPart_dxy))
+                            Fill1D(histos['RecoStandardEle_mvaNoIsoWP80_DzAbs'], abs(GenPart_dz))
+
+
+
+
+                    for k in range(len(bdtcuts)):
+                        if(abRecoAsLowPtBDT[k]):
+                            Fill1D(histos['RecoLowPtEle_Pt_BDT'+str(bdtcuts[k])], ch.GenPart_pt[i])
+                            if(bUseVertex):
+                                Fill1D(histos['RecoLowPtEle_DxyAbs_BDT'+str(bdtcuts[k])], abs(GenPart_dxy))
+
+
+                    if( bRecoAsLowPt):
+                        # record lowptElectron reco efficiency, on its own 
+                        Fill1D(histos['RecoLowPtEle_Pt'], ch.GenPart_pt[i])
+                        Fill1D(histos['RecoLowPtEle_Eta'], ch.GenPart_eta[i])
+                        Fill1D(histos['RecoLowPtEle_Phi'], ch.GenPart_phi[i])
+                        if(bUseVertex):
+                            Fill1D(histos['RecoLowPtEle_DxyAbs'], abs(GenPart_dxy))
+                            Fill1D(histos['RecoLowPtEle_DzAbs'], abs(GenPart_dz))
+
+                        Fill1D(histos['RecoLowPtEleBDTID'], ch.LowPtElectron_ID[eleIdx])
+                        Fill1D(histos['RecoLowPtEleBDTembeddedID'], ch.LowPtElectron_embeddedID[eleIdx])
+                        histos['RecoLowPtEleBDT2D'].Fill(ch.LowPtElectron_ID[eleIdx], ch.LowPtElectron_embeddedID[eleIdx])
+
+
+                        histos['LowPtEle_Matched_BDT_RelIso_2D'].Fill(ch.LowPtElectron_ID[eleIdx], ch.LowPtElectron_miniPFRelIso_all[eleIdx])
+                        histos['LowPtEle_Matched_BDT_AbsIso_2D'].Fill(ch.LowPtElectron_ID[eleIdx], ch.LowPtElectron_miniPFRelIso_all[eleIdx] * ch.LowPtElectron_pt[eleIdx])
+                        if(ch.LowPtElectron_pt[eleIdx] < 3.5):
+                            histos['LowPtEle_Matched_BDT_AbsIso_2D_pt0_3.5'].Fill(ch.LowPtElectron_ID[eleIdx], ch.LowPtElectron_miniPFRelIso_all[eleIdx] * ch.LowPtElectron_pt[eleIdx])
+                        elif(ch.LowPtElectron_pt[eleIdx] < 10):
+                            histos['LowPtEle_Matched_BDT_AbsIso_2D_pt3.5_10'].Fill(ch.LowPtElectron_ID[eleIdx], ch.LowPtElectron_miniPFRelIso_all[eleIdx] * ch.LowPtElectron_pt[eleIdx])
+                        elif(ch.LowPtElectron_pt[eleIdx] < 25):
+                            histos['LowPtEle_Matched_BDT_AbsIso_2D_pt10_25'].Fill(ch.LowPtElectron_ID[eleIdx], ch.LowPtElectron_miniPFRelIso_all[eleIdx] * ch.LowPtElectron_pt[eleIdx])
+
+                        # FIXME! RENDES SELECTION!!!
+                        miniIsoID = getMiniIsoType(ch.LowPtElectron_miniPFRelIso_all[eleIdx],ch.LowPtElectron_pt[eleIdx] )
+                        if( miniIsoID == 0 or miniIsoID == 1):
+                            histos['LowPtEle_Matched_BDT_RelIso_2D_Loose'].Fill(ch.LowPtElectron_ID[eleIdx], ch.LowPtElectron_miniPFRelIso_all[eleIdx])
+                        if(miniIsoID == 1):
+                            histos['LowPtEle_Matched_BDT_RelIso_2D_Tight'].Fill(ch.LowPtElectron_ID[eleIdx], ch.LowPtElectron_miniPFRelIso_all[eleIdx])
+
+
+                        # also record to IPP||LowPt
+                        Fill1D(histos['RecoIPP||LowPtEle_Pt'], ch.GenPart_pt[i])
+                        Fill1D(histos['RecoIPP||LowPtEle_Eta'], ch.GenPart_eta[i])
+                        Fill1D(histos['RecoIPP||LowPtEle_Phi'], ch.GenPart_phi[i])
+                        if(bUseVertex):
+                            Fill1D(histos['RecoIPP||LowPtEle_DxyAbs'], abs(GenPart_dxy))
+                            Fill1D(histos['RecoIPP||LowPtEle_DzAbs'], abs(GenPart_dz))
+
+
+                        # if there was no overlap, add it to the Standard || LowPt and Extended || LowPt sets
+                        if(foundStandardElectron == -1):
+
+                            # Fill Standard || LowPt -> moved to end
+
+                            # also add it to Extended || LowPt. We recorded foundLowPtElectron, we don't add Extended into this later if already found here.
+                            Fill1D(histos['RecoExtended||LowPtEle_Pt'], ch.GenPart_pt[i])
+                            Fill1D(histos['RecoExtended||LowPtEle_Eta'], ch.GenPart_eta[i])
+                            Fill1D(histos['RecoExtended||LowPtEle_Phi'], ch.GenPart_phi[i])
+
+                            # extended+lowpt+extrapol doesnt exist yet
+                            #Fill1D(histos['RecoExtended+ExtrapolEle_Pt'], ch.GenPart_pt[i])
+                            #Fill1D(histos['RecoExtended+ExtrapolEle_Eta'], ch.GenPart_eta[i])
+                            #Fill1D(histos['RecoExtended+ExtrapolEle_Phi'], ch.GenPart_phi[i])
+
+                        
+                            if(bUseVertex):
+                                Fill1D(histos['RecoExtended||LowPtEle_Dxy'], GenPart_dxy)
+                                Fill1D(histos['RecoExtended||LowPtEle_Dz'], GenPart_dz)
+                                Fill1D(histos['RecoExtended||LowPtEle_DxyAbs'], abs(GenPart_dxy))
+                                Fill1D(histos['RecoExtended||LowPtEle_DzAbs'], abs(GenPart_dz))
+
+                                #Fill1D(histos['RecoExtended+ExtrapolEleVtxx'], ch.GenPart_vx[i])
+                                #Fill1D(histos['RecoExtended+ExtrapolEleVtxy'], ch.GenPart_vy[i])
+                                #Fill1D(histos['RecoExtended+ExtrapolEleVtxz'], ch.GenPart_vz[i])
+                                #Fill1D(histos['RecoExtended+ExtrapolEle_Dxy'], GenPart_dxy)
+                                #Fill1D(histos['RecoExtended+ExtrapolEle_Dz'], GenPart_dz)
+                                #Fill1D(histos['RecoExtended+ExtrapolEle_DxyAbs'], abs(GenPart_dxy))
+                                #Fill1D(histos['RecoExtended+ExtrapolEle_DzAbs'], abs(GenPart_dz))
+
+                                #if( ovpt > 100):
+                                #    ovpt = 99
+                                #if( ovdxy > 15):
+                                #    ovdxy = 14.8
+                                #histos['ExtendedRecoExtrapolPtDxy2D'].Fill( ovpt, ovdxy )
+                                #histos['ExtendedRecoPtDxy2D'].Fill( ovpt, ovdxy )
+                        else:
+                            # Also found as standard electron: add it to Overlaps: 
+                            # Fill Standard Overlap (Standrd && LowPt):
+                            Fill1D(histos['OverlapStandard&&LowPtEle_Pt'], ch.GenPart_pt[i])
+                            Fill1D(histos['OverlapStandard&&LowPtEle_Eta'], ch.GenPart_eta[i])
+                            Fill1D(histos['OverlapStandard&&LowPtEle_Phi'], ch.GenPart_phi[i])
+                            if(bUseVertex):
+                                Fill1D(histos['OverlapStandard&&LowPtEle_DxyAbs'], abs(GenPart_dxy))
+                                Fill1D(histos['OverlapStandard&&LowPtEle_DzAbs'], abs(GenPart_dz))
+
+                            # Fill Extended (IPP || standard) overlap with lowPt:
+                            Fill1D(histos['OverlapExtended&&LowPtEle_Pt'], ch.GenPart_pt[i])
+                            Fill1D(histos['OverlapExtended&&LowPtEle_Eta'], ch.GenPart_eta[i])
+                            Fill1D(histos['OverlapExtended&&LowPtEle_Phi'], ch.GenPart_phi[i])
+                            if(bUseVertex):
+                                Fill1D(histos['OverlapExtended&&LowPtEle_DxyAbs'], abs(GenPart_dxy))
+                                Fill1D(histos['OverlapExtended&&LowPtEle_DzAbs'], abs(GenPart_dz))
+
+
+
+                    if( bRecoAsIPP):
+                        Fill1D(histos['RecoIPP_Pt'], ch.GenPart_pt[i])
+                        Fill1D(histos['RecoIPP_Eta'], ch.GenPart_eta[i])
+                        Fill1D(histos['RecoIPP_Phi'], ch.GenPart_phi[i])
+                        if(bUseVertex):
+                            Fill1D(histos['RecoIPP_DxyAbs'], abs(GenPart_dxy))
+                            Fill1D(histos['RecoIPP_DzAbs'], abs(GenPart_dz))
+
+
+                        if(foundStandardElectron == -1):
+                            # if not found in Standard, fill Extended
+                            Fill1D(histos['RecoExtendedEle_Pt'], ch.GenPart_pt[i])
+                            Fill1D(histos['RecoExtendedEle_Eta'], ch.GenPart_eta[i])
+                            Fill1D(histos['RecoExtendedEle_Phi'], ch.GenPart_phi[i])
+
+                            if(bUseVertex):
+                                Fill1D(histos['RecoExtendedEle_Dxy'], GenPart_dxy)
+                                Fill1D(histos['RecoExtendedEle_Dz'], GenPart_dz)
+                                Fill1D(histos['RecoExtendedEle_DxyAbs'], abs(GenPart_dxy))
+                                Fill1D(histos['RecoExtendedEle_DzAbs'], abs(GenPart_dz))
+
+                                if( ovpt > 100):
+                                    ovpt = 99
+                                if( ovdxy > 15):
+                                    ovdxy = 14.8
+                                histos['ExtendedRecoPtDxy2D'].Fill( ovpt, ovdxy )
+            
+
+                            # if ALSO not already found as lowPT, fill Extended || LowPt
+                            if(foundLowPtElectron == -1):
+                                Fill1D(histos['RecoExtended||LowPtEle_Pt'], ch.GenPart_pt[i])
+                                Fill1D(histos['RecoExtended||LowPtEle_Eta'], ch.GenPart_eta[i])
+                                Fill1D(histos['RecoExtended||LowPtEle_Phi'], ch.GenPart_phi[i])
+
+                                if(bUseVertex):
+                                    Fill1D(histos['RecoExtended||LowPtEle_Dxy'], GenPart_dxy)
+                                    Fill1D(histos['RecoExtended||LowPtEle_Dz'], GenPart_dz)
+                                    Fill1D(histos['RecoExtended||LowPtEle_DxyAbs'], abs(GenPart_dxy))
+                                    Fill1D(histos['RecoExtended||LowPtEle_DzAbs'], abs(GenPart_dz))
+                            else:
+                                # also found as lowPt and as track/pho pair: fill extended overlap
+                                # Fill Extended (track/pho || standard) overlap with lowPt:
+                                Fill1D(histos['OverlapExtended&&LowPtEle_Pt'], ch.GenPart_pt[i])
+                                Fill1D(histos['OverlapExtended&&LowPtEle_Eta'], ch.GenPart_eta[i])
+                                Fill1D(histos['OverlapExtended&&LowPtEle_Phi'], ch.GenPart_phi[i])
+                                if(bUseVertex):
+                                    Fill1D(histos['OverlapExtended&&LowPtEle_DxyAbs'], abs(GenPart_dxy))
+                                    Fill1D(histos['OverlapExtended&&LowPtEle_DzAbs'], abs(GenPart_dz))
+
+                            '''
+                            if(bExtrapolate):
+                                fPairDist = 100000
+                                iPairIdx = -1
+                                for j in range(len(aPhotonIsoTrackExtrapolPairs)):
+                                    
+                                    dist0 = dR(ch.GenPart_eta[i], aPhotonIsoTrackExtrapolPairs[j].GetEta(), ch.GenPart_phi[i], aPhotonIsoTrackExtrapolPairs[j].GetPhi()) 
+
+                                    if( dist0 < fPairDist):
+                                        fPairDist = dist0
+                                        iPairIdx = j
+
+                                
+                                if( dRcut(fPairDist, 0.2) ):
+                                    Fill1D(histos['RecoExtended+ExtrapolEle_Pt'], ch.GenPart_pt[i])
+                                    Fill1D(histos['RecoExtended+ExtrapolEle_Eta'], ch.GenPart_eta[i])
+                                    Fill1D(histos['RecoExtended+ExtrapolEle_Phi'], ch.GenPart_phi[i])
+
+                                    if(bUseVertex):
+                                        Fill1D(histos['RecoExtended+ExtrapolEle_Dxy'], GenPart_dxy)
+                                        Fill1D(histos['RecoExtended+ExtrapolEle_Dz'], GenPart_dz)
+                                        Fill1D(histos['RecoExtended+ExtrapolEle_DxyAbs'], abs(GenPart_dxy))
+                                        Fill1D(histos['RecoExtended+ExtrapolEle_DzAbs'], abs(GenPart_dz))
+
+                                        if( ovpt > 100):
+                                            ovpt = 99
+                                        if( ovdxy > 15):
+                                            ovdxy = 14.8
+                                        histos['ExtendedRecoExtrapolPtDxy2D'].Fill( ovpt, ovdxy )
+                            '''
+                        else:
+                            # can be reconstructed as Standard and as IPP as well, fill Standard&&Extended overlap:
+                            Fill1D(histos['OverlapIPP&&StandardEle_Pt'], ch.GenPart_pt[i])
+                            Fill1D(histos['OverlapIPP&&StandardEle_Eta'], ch.GenPart_eta[i])
+                            Fill1D(histos['OverlapIPP&&StandardEle_Phi'], ch.GenPart_phi[i])
+                            if(bUseVertex):
+                                Fill1D(histos['OverlapIPP&&StandardEle_DxyAbs'], abs(GenPart_dxy))
+                                Fill1D(histos['OverlapIPP&&StandardEle_DzAbs'], abs(GenPart_dz))
+
+
+                        if(foundLowPtElectron == -1):
+                            # not found as LP, fill IPP||LP
+                            Fill1D(histos['RecoIPP||LowPtEle_Pt'], ch.GenPart_pt[i])
+                            Fill1D(histos['RecoIPP||LowPtEle_Eta'], ch.GenPart_eta[i])
+                            Fill1D(histos['RecoIPP||LowPtEle_Phi'], ch.GenPart_phi[i])
+                            if(bUseVertex):
+                                Fill1D(histos['RecoIPP||LowPtEle_DxyAbs'], abs(GenPart_dxy))
+                                Fill1D(histos['RecoIPP||LowPtEle_DzAbs'], abs(GenPart_dz))
+                        else:
+                            # reco as both LP and IPP, fill overlap
+                            Fill1D(histos['OverlapIPP&&LowPtEle_Pt'], ch.GenPart_pt[i])
+                            Fill1D(histos['OverlapIPP&&LowPtEle_Eta'], ch.GenPart_eta[i])
+                            Fill1D(histos['OverlapIPP&&LowPtEle_Phi'], ch.GenPart_phi[i])
+                            if(bUseVertex):
+                                Fill1D(histos['OverlapIPP&&LowPtEle_DxyAbs'], abs(GenPart_dxy))
+                                Fill1D(histos['OverlapIPP&&LowPtEle_DzAbs'], abs(GenPart_dz))
+
+                    if(abRecoAsIPPCutBased[0]):
+                        Fill1D(histos['RecoIPP_CBLoose_Pt'], ch.GenPart_pt[i])
+                        if(bUseVertex):
+                            Fill1D(histos['RecoIPP_CBLoose_DxyAbs'], abs(GenPart_dxy))
+                    if(abRecoAsIPPCutBased[1]):
+                        Fill1D(histos['RecoIPP_CBMedium_Pt'], ch.GenPart_pt[i])
+                        if(bUseVertex):
+                            Fill1D(histos['RecoIPP_CBMedium_DxyAbs'], abs(GenPart_dxy))
+                    if(abRecoAsIPPCutBased[2]):
+                        Fill1D(histos['RecoIPP_CBTight_Pt'], ch.GenPart_pt[i])
+                        if(bUseVertex):
+                            Fill1D(histos['RecoIPP_CBTight_DxyAbs'], abs(GenPart_dxy))
+                    if(abRecoAsIPPMVA[0]):
+                        Fill1D(histos['RecoIPP_MVA90_Pt'], ch.GenPart_pt[i])
+                        if(bUseVertex):
+                            Fill1D(histos['RecoIPP_MVA90_DxyAbs'], abs(GenPart_dxy))
+                    if(abRecoAsIPPMVA[1]):
+                        Fill1D(histos['RecoIPP_MVA80_Pt'], ch.GenPart_pt[i])
+                        if(bUseVertex):
+                            Fill1D(histos['RecoIPP_MVA80_DxyAbs'], abs(GenPart_dxy))
+
+
+                    for k in range(len(bdtcuts)):
+                        if(abRecoAsLowPtBDT[k] or bRecoAsIPP):
+                            Fill1D(histos['RecoIPP||LowPtEle_Pt_BDT'+str(bdtcuts[k])], ch.GenPart_pt[i])
+                            if(bUseVertex):
+                                Fill1D(histos['RecoIPP||LowPtEle_DxyAbs_BDT'+str(bdtcuts[k])], abs(GenPart_dxy))
+
+                        if(abRecoAsLowPtBDT[k] or abRecoAsIPPCutBased[0]):
+                            Fill1D(histos['RecoIPP_CBLoose||LowPtEle_Pt_BDT'+str(bdtcuts[k])], ch.GenPart_pt[i])
+                            if(bUseVertex):
+                                Fill1D(histos['RecoIPP_CBLoose||LowPtEle_DxyAbs_BDT'+str(bdtcuts[k])], abs(GenPart_dxy))
+
+                        if(abRecoAsLowPtBDT[k] or abRecoAsIPPCutBased[1]):
+                            Fill1D(histos['RecoIPP_CBMedium||LowPtEle_Pt_BDT'+str(bdtcuts[k])], ch.GenPart_pt[i])
+                            if(bUseVertex):
+                                Fill1D(histos['RecoIPP_CBMedium||LowPtEle_DxyAbs_BDT'+str(bdtcuts[k])], abs(GenPart_dxy))
+
+                        if(abRecoAsLowPtBDT[k] or abRecoAsIPPCutBased[2]):
+                            Fill1D(histos['RecoIPP_CBTight||LowPtEle_Pt_BDT'+str(bdtcuts[k])], ch.GenPart_pt[i])
+                            if(bUseVertex):
+                                Fill1D(histos['RecoIPP_CBTight||LowPtEle_DxyAbs_BDT'+str(bdtcuts[k])], abs(GenPart_dxy))
+
+                        if(abRecoAsLowPtBDT[k] or abRecoAsIPPMVA[0]):
+                            Fill1D(histos['RecoIPP_MVA90||LowPtEle_Pt_BDT'+str(bdtcuts[k])], ch.GenPart_pt[i])
+                            if(bUseVertex):
+                                Fill1D(histos['RecoIPP_MVA90||LowPtEle_DxyAbs_BDT'+str(bdtcuts[k])], abs(GenPart_dxy))
+
+                        if(abRecoAsLowPtBDT[k] or abRecoAsIPPMVA[1]):
+                            Fill1D(histos['RecoIPP_MVA80||LowPtEle_Pt_BDT'+str(bdtcuts[k])], ch.GenPart_pt[i])
+                            if(bUseVertex):
+                                Fill1D(histos['RecoIPP_MVA80||LowPtEle_DxyAbs_BDT'+str(bdtcuts[k])], abs(GenPart_dxy))
+
+
+                    if(abRecoAsStandardCutBased[0] or bRecoAsIPP):
+                        Fill1D(histos['RecoExtendedEle_CBVeto_Pt'], ch.GenPart_pt[i])
+                        if(bUseVertex):
+                            Fill1D(histos['RecoExtendedEle_CBVeto_DxyAbs'], abs(GenPart_dxy))
+                    if(abRecoAsStandardCutBased[1] or bRecoAsIPP):
+                        Fill1D(histos['RecoExtendedEle_CBLoose_Pt'], ch.GenPart_pt[i])
+                        if(bUseVertex):
+                            Fill1D(histos['RecoExtendedEle_CBLoose_DxyAbs'], abs(GenPart_dxy))
+                    if( abRecoAsStandardCutBased[2] or bRecoAsIPP ):
+                        Fill1D(histos['RecoExtendedEle_CBMedium_Pt'], ch.GenPart_pt[i])
+                        if(bUseVertex):
+                            Fill1D(histos['RecoExtendedEle_CBMedium_DxyAbs'], abs(GenPart_dxy))
+                    if( abRecoAsStandardCutBased[3] or bRecoAsIPP ):
+                        Fill1D(histos['RecoExtendedEle_CBTight_Pt'], ch.GenPart_pt[i])
+                        if(bUseVertex):
+                            Fill1D(histos['RecoExtendedEle_CBTight_DxyAbs'], abs(GenPart_dxy))
+
+
+                    if(abRecoAsStandardCutBased[0] or abRecoAsIPPCutBased[0]):
+                        Fill1D(histos['RecoExtendedEle_CBVeto_PhoCBLoose_Pt'], ch.GenPart_pt[i])
+                        if(bUseVertex):
+                            Fill1D(histos['RecoExtendedEle_CBVeto_PhoCBLoose_DxyAbs'], abs(GenPart_dxy))
+                    if(abRecoAsStandardCutBased[1] or abRecoAsIPPCutBased[0]):
+                        Fill1D(histos['RecoExtendedEle_CBLoose_PhoCBLoose_Pt'], ch.GenPart_pt[i])
+                        if(bUseVertex):
+                            Fill1D(histos['RecoExtendedEle_CBLoose_PhoCBLoose_DxyAbs'], abs(GenPart_dxy))
+                    if( abRecoAsStandardCutBased[2] or abRecoAsIPPCutBased[0] ):
+                        Fill1D(histos['RecoExtendedEle_CBMedium_PhoCBLoose_Pt'], ch.GenPart_pt[i])
+                        if(bUseVertex):
+                            Fill1D(histos['RecoExtendedEle_CBMedium_PhoCBLoose_DxyAbs'], abs(GenPart_dxy))
+                    if( abRecoAsStandardCutBased[3] or abRecoAsIPPCutBased[0] ):
+                        Fill1D(histos['RecoExtendedEle_CBTight_PhoCBLoose_Pt'], ch.GenPart_pt[i])
+                        if(bUseVertex):
+                            Fill1D(histos['RecoExtendedEle_CBTight_PhoCBLoose_DxyAbs'], abs(GenPart_dxy))
+
+                    if(abRecoAsStandardCutBased[0] or abRecoAsIPPCutBased[1]):
+                        Fill1D(histos['RecoExtendedEle_CBVeto_PhoCBMedium_Pt'], ch.GenPart_pt[i])
+                        if(bUseVertex):
+                            Fill1D(histos['RecoExtendedEle_CBVeto_PhoCBMedium_DxyAbs'], abs(GenPart_dxy))
+                    if(abRecoAsStandardCutBased[1] or abRecoAsIPPCutBased[1]):
+                        Fill1D(histos['RecoExtendedEle_CBLoose_PhoCBMedium_Pt'], ch.GenPart_pt[i])
+                        if(bUseVertex):
+                            Fill1D(histos['RecoExtendedEle_CBLoose_PhoCBMedium_DxyAbs'], abs(GenPart_dxy))
+                    if( abRecoAsStandardCutBased[2] or abRecoAsIPPCutBased[1] ):
+                        Fill1D(histos['RecoExtendedEle_CBMedium_PhoCBMedium_Pt'], ch.GenPart_pt[i])
+                        if(bUseVertex):
+                            Fill1D(histos['RecoExtendedEle_CBMedium_PhoCBMedium_DxyAbs'], abs(GenPart_dxy))
+                    if( abRecoAsStandardCutBased[3] or abRecoAsIPPCutBased[1] ):
+                        Fill1D(histos['RecoExtendedEle_CBTight_PhoCBMedium_Pt'], ch.GenPart_pt[i])
+                        if(bUseVertex):
+                            Fill1D(histos['RecoExtendedEle_CBTight_PhoCBMedium_DxyAbs'], abs(GenPart_dxy))
+
+                    if(abRecoAsStandardCutBased[0] or abRecoAsIPPCutBased[2]):
+                        Fill1D(histos['RecoExtendedEle_CBVeto_PhoCBTight_Pt'], ch.GenPart_pt[i])
+                        if(bUseVertex):
+                            Fill1D(histos['RecoExtendedEle_CBVeto_PhoCBTight_DxyAbs'], abs(GenPart_dxy))
+                    if(abRecoAsStandardCutBased[1] or abRecoAsIPPCutBased[2]):
+                        Fill1D(histos['RecoExtendedEle_CBLoose_PhoCBTight_Pt'], ch.GenPart_pt[i])
+                        if(bUseVertex):
+                            Fill1D(histos['RecoExtendedEle_CBLoose_PhoCBTight_DxyAbs'], abs(GenPart_dxy))
+                    if( abRecoAsStandardCutBased[2] or abRecoAsIPPCutBased[2] ):
+                        Fill1D(histos['RecoExtendedEle_CBMedium_PhoCBTight_Pt'], ch.GenPart_pt[i])
+                        if(bUseVertex):
+                            Fill1D(histos['RecoExtendedEle_CBMedium_PhoCBTight_DxyAbs'], abs(GenPart_dxy))
+                    if( abRecoAsStandardCutBased[3] or abRecoAsIPPCutBased[2] ):
+                        Fill1D(histos['RecoExtendedEle_CBTight_PhoCBTight_Pt'], ch.GenPart_pt[i])
+                        if(bUseVertex):
+                            Fill1D(histos['RecoExtendedEle_CBTight_PhoCBTight_DxyAbs'], abs(GenPart_dxy))
+
+
+                    if(abRecoAsStandardCutBased[0] or abRecoAsIPPMVA[0]):
+                        Fill1D(histos['RecoExtendedEle_CBVeto_PhoMVA90_Pt'], ch.GenPart_pt[i])
+                        if(bUseVertex):
+                            Fill1D(histos['RecoExtendedEle_CBVeto_PhoMVA90_DxyAbs'], abs(GenPart_dxy))
+                    if(abRecoAsStandardCutBased[1] or abRecoAsIPPMVA[0]):
+                        Fill1D(histos['RecoExtendedEle_CBLoose_PhoMVA90_Pt'], ch.GenPart_pt[i])
+                        if(bUseVertex):
+                            Fill1D(histos['RecoExtendedEle_CBLoose_PhoMVA90_DxyAbs'], abs(GenPart_dxy))
+                    if( abRecoAsStandardCutBased[2] or abRecoAsIPPMVA[0] ):
+                        Fill1D(histos['RecoExtendedEle_CBMedium_PhoMVA90_Pt'], ch.GenPart_pt[i])
+                        if(bUseVertex):
+                            Fill1D(histos['RecoExtendedEle_CBMedium_PhoMVA90_DxyAbs'], abs(GenPart_dxy))
+                    if( abRecoAsStandardCutBased[3] or abRecoAsIPPMVA[0] ):
+                        Fill1D(histos['RecoExtendedEle_CBTight_PhoMVA90_Pt'], ch.GenPart_pt[i])
+                        if(bUseVertex):
+                            Fill1D(histos['RecoExtendedEle_CBTight_PhoMVA90_DxyAbs'], abs(GenPart_dxy))
+
+                    if(abRecoAsStandardCutBased[0] or abRecoAsIPPMVA[1]):
+                        Fill1D(histos['RecoExtendedEle_CBVeto_PhoMVA80_Pt'], ch.GenPart_pt[i])
+                        if(bUseVertex):
+                            Fill1D(histos['RecoExtendedEle_CBVeto_PhoMVA80_DxyAbs'], abs(GenPart_dxy))
+                    if(abRecoAsStandardCutBased[1] or abRecoAsIPPMVA[1]):
+                        Fill1D(histos['RecoExtendedEle_CBLoose_PhoMVA80_Pt'], ch.GenPart_pt[i])
+                        if(bUseVertex):
+                            Fill1D(histos['RecoExtendedEle_CBLoose_PhoMVA80_DxyAbs'], abs(GenPart_dxy))
+                    if( abRecoAsStandardCutBased[2] or abRecoAsIPPMVA[1] ):
+                        Fill1D(histos['RecoExtendedEle_CBMedium_PhoMVA80_Pt'], ch.GenPart_pt[i])
+                        if(bUseVertex):
+                            Fill1D(histos['RecoExtendedEle_CBMedium_PhoMVA80_DxyAbs'], abs(GenPart_dxy))
+                    if( abRecoAsStandardCutBased[3] or abRecoAsIPPMVA[1] ):
+                        Fill1D(histos['RecoExtendedEle_CBTight_PhoMVA80_Pt'], ch.GenPart_pt[i])
+                        if(bUseVertex):
+                            Fill1D(histos['RecoExtendedEle_CBTight_PhoMVA80_DxyAbs'], abs(GenPart_dxy))
+
+
+
+
+                    # Standard or LowPt
+                    if(bRecoAsStandard or bRecoAsLowPt):
+                        Fill1D(histos['RecoStandardEle||LowPtEle_Pt'], ch.GenPart_pt[i])
+                        Fill1D(histos['RecoStandardEle||LowPtEle_Eta'], ch.GenPart_eta[i])
+                        Fill1D(histos['RecoStandardEle||LowPtEle_Phi'], ch.GenPart_phi[i])
+
+                        if(bUseVertex):
+                            Fill1D(histos['RecoStandardEle||LowPtEle_Dxy'], GenPart_dxy)
+                            Fill1D(histos['RecoStandardEle||LowPtEle_Dz'], GenPart_dz)
+                            Fill1D(histos['RecoStandardEle||LowPtEle_DxyAbs'], abs(GenPart_dxy))
+                            Fill1D(histos['RecoStandardEle||LowPtEle_DzAbs'], abs(GenPart_dz))
+
+                    if(abRecoAsStandardCutBased[0] or bRecoAsLowPt):
+                        Fill1D(histos['RecoStandardEle_CBVeto||LowPtEle_Pt'], ch.GenPart_pt[i])
+                        if(bUseVertex):
+                            Fill1D(histos['RecoStandardEle_CBVeto||LowPtEle_DxyAbs'], abs(GenPart_dxy))
+                    if(abRecoAsStandardCutBased[1] or bRecoAsLowPt):
+                        Fill1D(histos['RecoStandardEle_CBLoose||LowPtEle_Pt'], ch.GenPart_pt[i])
+                        if(bUseVertex):
+                            Fill1D(histos['RecoStandardEle_CBLoose||LowPtEle_DxyAbs'], abs(GenPart_dxy))
+                    if( abRecoAsStandardCutBased[2] or bRecoAsLowPt ):
+                        Fill1D(histos['RecoStandardEle_CBMedium||LowPtEle_Pt'], ch.GenPart_pt[i])
+                        if(bUseVertex):
+                            Fill1D(histos['RecoStandardEle_CBMedium||LowPtEle_DxyAbs'], abs(GenPart_dxy))
+                    if( abRecoAsStandardCutBased[3] or bRecoAsLowPt ):
+                        Fill1D(histos['RecoStandardEle_CBTight||LowPtEle_Pt'], ch.GenPart_pt[i])
+                        if(bUseVertex):
+                            Fill1D(histos['RecoStandardEle_CBTight||LowPtEle_DxyAbs'], abs(GenPart_dxy))
+
+                    if(abRecoAsStandardMVA[0] or bRecoAsLowPt):
+                        Fill1D(histos['RecoStandardEle_mvaNoIsoWPL||LowPtEle_Pt'], ch.GenPart_pt[i])
+                        if(bUseVertex):
+                            Fill1D(histos['RecoStandardEle_mvaNoIsoWPL||LowPtEle_DxyAbs'], abs(GenPart_dxy))
+                    if(abRecoAsStandardMVA[1] or bRecoAsLowPt):
+                        Fill1D(histos['RecoStandardEle_mvaNoIsoWP90||LowPtEle_Pt'], ch.GenPart_pt[i])
+                        if(bUseVertex):
+                            Fill1D(histos['RecoStandardEle_mvaNoIsoWP90||LowPtEle_DxyAbs'], abs(GenPart_dxy))
+                    if( abRecoAsStandardMVA[2] or bRecoAsLowPt ):
+                        Fill1D(histos['RecoStandardEle_mvaNoIsoWP80||LowPtEle_Pt'], ch.GenPart_pt[i])
+                        if(bUseVertex):
+                            Fill1D(histos['RecoStandardEle_mvaNoIsoWP80||LowPtEle_DxyAbs'], abs(GenPart_dxy))
+
+                    for k in range(len(bdtcuts)):
+                        if(bRecoAsStandard or abRecoAsLowPtBDT[k]):
+                            Fill1D(histos['RecoStandardEle||LowPtEle_Pt_BDT'+str(bdtcuts[k])], ch.GenPart_pt[i])
+                            if(bUseVertex):
+                                Fill1D(histos['RecoStandardEle||LowPtEle_DxyAbs_BDT'+str(bdtcuts[k])], abs(GenPart_dxy))
+                        if(abRecoAsStandardCutBased[0] or abRecoAsLowPtBDT[k]):
+                            Fill1D(histos['RecoStandardEle_CBVeto||LowPtEle_Pt_BDT'+str(bdtcuts[k])], ch.GenPart_pt[i])
+                            if(bUseVertex):
+                                Fill1D(histos['RecoStandardEle_CBVeto||LowPtEle_DxyAbs_BDT'+str(bdtcuts[k])], abs(GenPart_dxy))
+                        if(abRecoAsStandardCutBased[1] or abRecoAsLowPtBDT[k]):
+                            Fill1D(histos['RecoStandardEle_CBLoose||LowPtEle_Pt_BDT'+str(bdtcuts[k])], ch.GenPart_pt[i])
+                            if(bUseVertex):
+                                Fill1D(histos['RecoStandardEle_CBLoose||LowPtEle_DxyAbs_BDT'+str(bdtcuts[k])], abs(GenPart_dxy))
+                        if( abRecoAsStandardCutBased[2] or abRecoAsLowPtBDT[k] ):
+                            Fill1D(histos['RecoStandardEle_CBMedium||LowPtEle_Pt_BDT'+str(bdtcuts[k])], ch.GenPart_pt[i])
+                            if(bUseVertex):
+                                Fill1D(histos['RecoStandardEle_CBMedium||LowPtEle_DxyAbs_BDT'+str(bdtcuts[k])], abs(GenPart_dxy))
+                        if( abRecoAsStandardCutBased[3] or abRecoAsLowPtBDT[k] ):
+                            Fill1D(histos['RecoStandardEle_CBTight||LowPtEle_Pt_BDT'+str(bdtcuts[k])], ch.GenPart_pt[i])
+                            if(bUseVertex):
+                                Fill1D(histos['RecoStandardEle_CBTight||LowPtEle_DxyAbs_BDT'+str(bdtcuts[k])], abs(GenPart_dxy))
+
+                        if(abRecoAsStandardMVA[0] or abRecoAsLowPtBDT[k]):
+                            Fill1D(histos['RecoStandardEle_mvaNoIsoWPL||LowPtEle_Pt_BDT'+str(bdtcuts[k])], ch.GenPart_pt[i])
+                            if(bUseVertex):
+                                Fill1D(histos['RecoStandardEle_mvaNoIsoWPL||LowPtEle_DxyAbs_BDT'+str(bdtcuts[k])], abs(GenPart_dxy))
+                        if(abRecoAsStandardMVA[1] or abRecoAsLowPtBDT[k]):
+                            Fill1D(histos['RecoStandardEle_mvaNoIsoWP90||LowPtEle_Pt_BDT'+str(bdtcuts[k])], ch.GenPart_pt[i])
+                            if(bUseVertex):
+                                Fill1D(histos['RecoStandardEle_mvaNoIsoWP90||LowPtEle_DxyAbs_BDT'+str(bdtcuts[k])], abs(GenPart_dxy))
+                        if( abRecoAsStandardMVA[2] or abRecoAsLowPtBDT[k] ):
+                            Fill1D(histos['RecoStandardEle_mvaNoIsoWP80||LowPtEle_Pt_BDT'+str(bdtcuts[k])], ch.GenPart_pt[i])
+                            if(bUseVertex):
+                                Fill1D(histos['RecoStandardEle_mvaNoIsoWP80||LowPtEle_DxyAbs_BDT'+str(bdtcuts[k])], abs(GenPart_dxy))
+
+
+
+                        # All 3:
+                        if(abRecoAsStandardMVA[0] or abRecoAsIPPMVA[0] or abRecoAsLowPtBDT[k]):
+                            Fill1D(histos['RecoExtendedEle_mvaNoIsoWPL_PhoMVA90||LowPtEle_Pt_BDT'+str(bdtcuts[k])], ch.GenPart_pt[i])
+                            if(bUseVertex):
+                                Fill1D(histos['RecoExtendedEle_mvaNoIsoWPL_PhoMVA90||LowPtEle_DxyAbs_BDT'+str(bdtcuts[k])], abs(GenPart_dxy))
+                        if(abRecoAsStandardCutBased[0] or abRecoAsIPPCutBased[0] or abRecoAsLowPtBDT[k]):
+                            Fill1D(histos['RecoExtendedEle_CBVeto_PhoCBLoose||LowPtEle_Pt_BDT'+str(bdtcuts[k])], ch.GenPart_pt[i])
+                            if(bUseVertex):
+                                Fill1D(histos['RecoExtendedEle_CBVeto_PhoCBLoose||LowPtEle_DxyAbs_BDT'+str(bdtcuts[k])], abs(GenPart_dxy))
+                        if(abRecoAsStandardCutBased[1] or abRecoAsIPPCutBased[1] or abRecoAsLowPtBDT[k]):
+                            Fill1D(histos['RecoExtendedEle_CBLoose_PhoCBMedium||LowPtEle_Pt_BDT'+str(bdtcuts[k])], ch.GenPart_pt[i])
+                            if(bUseVertex):
+                                Fill1D(histos['RecoExtendedEle_CBLoose_PhoCBMedium||LowPtEle_DxyAbs_BDT'+str(bdtcuts[k])], abs(GenPart_dxy))
+
+                    # overlap study for standard vs lowpt at the given special workingpoints
+                    if(abRecoAsLowPtBDT[0] and abRecoAsStandardCutBased[0]):
+                        Fill1D(histos['OverlapStandard_CBVeto&&LowPtEle_BDT0_Pt'], ch.GenPart_pt[i])
+                        if(bUseVertex):
+                            Fill1D(histos['OverlapStandard_CBVeto&&LowPtEle_BDT0_DxyAbs'], abs(GenPart_dxy))
+
+
+
+
+
+                    # final overlap study for ipp:
+                    if(abRecoAsIPPCutBased[0] and ( abRecoAsStandardCutBased[0] or abRecoAsLowPtBDT[0] )):
+                        Fill1D(histos['OverlapIPP_CBLoose&&(Standard_CBVeto||LowPtEle_BDT0)_Pt'], ch.GenPart_pt[i])
+                        if(bUseVertex):
+                            Fill1D(histos['OverlapIPP_CBLoose&&(Standard_CBVeto||LowPtEle_BDT0)_DxyAbs'], abs(GenPart_dxy))
+
+
+
+                    # Other recos:
+
+                    # just isotracks
+                    isodist = 100000
+                    isoIdx = -1
+                    idx0 = -1
+                    
+                    for j in range(ch.nIsoTrack):
+                        dist0 = dR(ch.GenPart_eta[i], ch.IsoTrack_eta[j], ch.GenPart_phi[i], ch.IsoTrack_phi[j] ) 
+                        if( dist0 < isodist):
+                            isodist = dist0
+                            idx0 = j
+                    if( dRcut(isodist,0.2) ):
+                        Fill1D(histos['IsoTrack_Pt'], ch.GenPart_pt[i])
+                        Fill1D(histos['IsoTrack_Eta'], ch.GenPart_eta[i])
+                        Fill1D(histos['IsoTrack_Phi'], ch.GenPart_phi[i])
+
+                        if(bUseVertex):
+                            Fill1D(histos['IsoTrack_Dxy'], GenPart_dxy)
+                            Fill1D(histos['IsoTrack_Dz'], GenPart_dz)
+                            Fill1D(histos['IsoTrack_DxyAbs'], abs(GenPart_dxy))
+                            Fill1D(histos['IsoTrack_DzAbs'], abs(GenPart_dz))
+                        isoIdx = idx0
+
+
+                    # just photon
+                    phodist = 100000
+                    iPhoIdx = -1
+                    for j in range(ch.nPhoton):
+                        dist0 = dR(ch.GenPart_eta[i], ch.Photon_eta[j], ch.GenPart_phi[i], ch.Photon_phi[j] ) 
+                        if( dist0 < phodist):
+                            phodist = dist0
+                            iPhoIdx = j
+                    if( dRcut(phodist,0.2) ):
+                        Fill1D(histos['RecoPhoton_Pt'], ch.GenPart_pt[i])
+                        Fill1D(histos['RecoPhoton_Eta'], ch.GenPart_eta[i])
+                        Fill1D(histos['RecoPhoton_Phi'], ch.GenPart_phi[i])
+                        if(bUseVertex):
+                            Fill1D(histos['RecoPhoton_Dxy'], GenPart_dxy)
+                            Fill1D(histos['RecoPhoton_Dz'], GenPart_dz)
+                            Fill1D(histos['RecoPhoton_DxyAbs'], abs(GenPart_dxy))
+                            Fill1D(histos['RecoPhoton_DzAbs'], abs(GenPart_dz))
+
+                    histos['dRControlPlot2D'].Fill(isodist,phodist)
+
+
+
+        ############################
+        ## BACKGROUND CALCULATION ##
+        ############################
+
+        # create background
+        if(bBackground):
+            background = []
+            for iTR in range(ch.nIsoTrack):
+                min_dRele = 1000
+                minIEle = -1
+                #min_dRbackgnd = 1000
+                #minIBackgnd = -1
+
+                # eta and pt cut also here:
+                if(abs(ch.IsoTrack_eta[iTR]) > 2.5 or ch.IsoTrack_pt[iTR] < ptcut):
+                    continue
+
+                for iMC in range(ch.nGenPart):
+                    temp_dR = dR(ch.GenPart_eta[iMC], ch.IsoTrack_eta[iTR], ch.GenPart_phi[iMC], ch.IsoTrack_phi[iTR])
+                    if abs(ch.GenPart_pdgId[iMC]) == 11:
+                        if( temp_dR < min_dRele):
+                            min_dRele = temp_dR
+                            minIEle = iMC
+                    # suggestion by Ivan: dont do this. 
+                    #else:
+                    #    if(temp_dR < min_dRbackgnd):
+                    #        min_dRbackgnd = temp_dR
+                    #        minIBackgnd = iMC
+
+                #if( dRcut(min_dRbackgnd,0.2)):
+                if(not dRcut(min_dRele,0.2) ):
+                    #background.append(minIBackgnd)
+                    background.append(iTR)
+
+                    pt = ch.IsoTrack_pt[iTR]
+                    # fixme: what is up with overflow
+                    if(pt > 99):
+                        pt = 99.0
+                    # this is the denom:
+                    histos['TrueBK_Pt'].Fill( pt)
+                    histos['TrueBK_Eta'].Fill( ch.IsoTrack_eta[iTR])
+                    histos['TrueBK_Phi'].Fill( ch.IsoTrack_phi[iTR])
+                    if(bUseVertex):
+                        dxy = abs(ch.IsoTrack_dxy[iTR])
+                        dz = abs(ch.IsoTrack_dz[iTR])
+
+                        # fixme: overflow?
+                        if(dxy > 14 and binningSet == 0):
+                            dxy = 14
+                        elif(dxy > 2.5 and binningSet == 1):
+                            dxy = 2.48
+
+                        if(dz > 14 and binningSet == 0):
+                            dz = 14
+                        elif(dz > 5 and binningSet == 1):
+                            dz = 4.9
+
+                        histos['TrueBK_DxyAbs'].Fill(dxy)
+                        histos['TrueBK_DzAbs'].Fill(dz)
+
+            # To get background rejection: redo the matching, but work on the true background as input sample.
+
+            for iBK in range(len(background)):
+
+                i = background[iBK]
                 if(bUseVertex):
-                    GenPart_dxy = getdxy(i, ch)
-                    GenPart_dz = getdz(i, ch)
+                    IsoTrack_dxyAbs = abs(ch.IsoTrack_dxy[i])
+                    IsoTrack_dzAbs = abs(ch.IsoTrack_dz[i])
 
-                Fill1D(histos['TrueElePt'],ch.GenPart_pt[i])
-                Fill1D(histos['TrueEleEta'],ch.GenPart_eta[i])
-                Fill1D(histos['TrueElePhi'],ch.GenPart_phi[i])
+                    # fixme: overflow?
+                    if(IsoTrack_dxyAbs > 14 and binningSet == 0):
+                        IsoTrack_dxyAbs = 14
+                    elif(IsoTrack_dxyAbs > 2.5 and binningSet == 1):
+                        IsoTrack_dxyAbs = 2.48
 
-                if(bUseVertex):
-                    Fill1D(histos['TrueEleVtxx'],ch.GenPart_vx[i])
-                    Fill1D(histos['TrueEleVtxy'],ch.GenPart_vy[i])
-                    Fill1D(histos['TrueEleVtxz'],ch.GenPart_vz[i])
-                    Fill1D(histos['TrueEleDxy'], GenPart_dxy)
-                    Fill1D(histos['TrueEleDz'], GenPart_dz)
-                    Fill1D(histos['TrueEleDxyAbs'], abs(GenPart_dxy))
-                    Fill1D(histos['TrueEleDzAbs'], abs(GenPart_dz))
+                    if(IsoTrack_dzAbs > 14 and binningSet == 0):
+                        IsoTrack_dzAbs = 14
+                    elif(IsoTrack_dzAbs > 5 and binningSet == 1):
+                        IsoTrack_dzAbs = 4.9
+                pt = ch.IsoTrack_pt[i]
+                if(pt > 99.0):
+                    pt = 99.0
 
-                    histos['TrueElePtDxy2D'].Fill( ch.GenPart_pt[i], abs(GenPart_dxy) )
 
-                # check if there is a reco ele / isotrack:
+
+                #############################
+                ## TEST RECO METHODS ON BK ##
+                #############################
+
+                # Try as Standard:
+
+                bRejectedAsStandard = False
+                abRejectedAsStandardCutBased = [False, False, False, False]
+                abRejectedAsStandardMVA = [False, False, False]
                 eledist = 100000
                 eleIdx = -1
                 idx0 = -1
                 for j in range(ch.nElectron):
 
-                    dist0 = dR(ch.GenPart_eta[i], ch.Electron_eta[j], ch.GenPart_phi[i], ch.Electron_phi[j] ) 
+                    # remove isolation
+                    #eleVID(ch.Electron_vidNestedWPBitmap[j], 0, removedCuts=['pfRelIso03_all'])
+                    dist0 = dR(ch.IsoTrack_eta[i], ch.Electron_eta[j], ch.IsoTrack_phi[i], ch.Electron_phi[j] ) 
                     if( dist0 < eledist):
                         eledist = dist0
                         idx0 = j
-                if( dRcut(eledist) ):
-                    eleIdx = idx0
-                    Fill1D(histos['RecoElePt'], ch.GenPart_pt[i])
-                    Fill1D(histos['RecoEleEta'], ch.GenPart_eta[i])
-                    Fill1D(histos['RecoElePhi'], ch.GenPart_phi[i])
+                # not dRcut: background REJECTION efficiency
+                if( not dRcut(eledist) ):
+                    bRejectedAsStandard = True
+                else:
+                    eleIdx = idx0 
+                misidentifiedAsStandardElectron = eleIdx
 
-                    if(bUseVertex):
-                        Fill1D(histos['RecoEleVtxx'], ch.GenPart_vx[i])
-                        Fill1D(histos['RecoEleVtxy'], ch.GenPart_vy[i])
-                        Fill1D(histos['RecoEleVtxz'], ch.GenPart_vz[i])
-                        Fill1D(histos['RecoEleDxy'], GenPart_dxy)
-                        Fill1D(histos['RecoEleDz'], GenPart_dz)
-                        Fill1D(histos['RecoEleDxyAbs'], abs(GenPart_dxy))
-                        Fill1D(histos['RecoEleDzAbs'], abs(GenPart_dz))
 
-                    Fill1D(histos['RecoFixedElePt'], ch.GenPart_pt[i])
-                    Fill1D(histos['RecoFixedEleEta'], ch.GenPart_eta[i])
-                    Fill1D(histos['RecoFixedElePhi'], ch.GenPart_phi[i])
 
-                    Fill1D(histos['RecoFixedExtrapolElePt'], ch.GenPart_pt[i])
-                    Fill1D(histos['RecoFixedExtrapolEleEta'], ch.GenPart_eta[i])
-                    Fill1D(histos['RecoFixedExtrapolElePhi'], ch.GenPart_phi[i])
+                # standard with cut based id
+                for iCut in range(4):
+                    eledist = 100000
+                    idx0 = -1
+                    for j in range(ch.nElectron):
+                        #if(ch.Electron_cutBased[j] >> iCut & 1):
+                        #if(ch.Electron_cutBased[j] > iCut ):
+                        if(eleVID( ch.Electron_vidNestedWPBitmap[j], iCut + 1, removedCuts=['pfRelIso03_all'])) :
+                            dist0 = dR(ch.IsoTrack_eta[i], ch.Electron_eta[j], ch.IsoTrack_phi[i], ch.Electron_phi[j] ) 
+                            if( dist0 < eledist):
+                                eledist = dist0
+                                idx0 = j
+                    # not dRcut: background REJECTION efficiency
+                    if( not dRcut(eledist) ):
+                        abRejectedAsStandardCutBased[iCut] = True
+
+
+
+                # with mva ID:
+                eledist = 100000
+                idx0 = -1
+                for j in range(ch.nElectron):
+                    if(ch.Electron_mvaFall17V2noIso_WPL[j]):
+                        dist0 = dR(ch.IsoTrack_eta[i], ch.Electron_eta[j], ch.IsoTrack_phi[i], ch.Electron_phi[j] ) 
+                        if( dist0 < eledist):
+                            eledist = dist0
+                            idx0 = j
+                if( not dRcut(eledist) ):
+                    abRejectedAsStandardMVA[0] = True
+
+                eledist = 100000
+                idx0 = -1
+                for j in range(ch.nElectron):
+                    if(ch.Electron_mvaFall17V2noIso_WP90[j]):
+                        dist0 = dR(ch.IsoTrack_eta[i], ch.Electron_eta[j], ch.IsoTrack_phi[i], ch.Electron_phi[j] ) 
+                        if( dist0 < eledist):
+                            eledist = dist0
+                            idx0 = j
+                if( not dRcut(eledist) ):
+                    abRejectedAsStandardMVA[1] = True
+
+                eledist = 100000
+                idx0 = -1
+                for j in range(ch.nElectron):
+                    if(ch.Electron_mvaFall17V2noIso_WP80[j]):
+                        dist0 = dR(ch.IsoTrack_eta[i], ch.Electron_eta[j], ch.IsoTrack_phi[i], ch.Electron_phi[j] ) 
+                        if( dist0 < eledist):
+                            eledist = dist0
+                            idx0 = j
+                # not dRcut: background REJECTION efficiency
+                if( not dRcut(eledist) ):
+                    abRejectedAsStandardMVA[2] = True
+
+
+
+                # V9: Try as LowPt Electron
+
+                misidentifiedAsLowPtElectron = -1
+                bRejectedAsLowPt = False
+                abRejectedAsLowPtBDT = [False] * len(bdtcuts)
+                bdtidx = [-1] * len(bdtcuts)
+                bdtdist = [100000] * len(bdtcuts)
+                if(bUseV9):
+                    eledist = 100000
+                    idx0 = -1
+                    for j in range(ch.nLowPtElectron):
+
+                        dist0 = dR(ch.IsoTrack_eta[i], ch.LowPtElectron_eta[j], ch.IsoTrack_phi[i], ch.LowPtElectron_phi[j] ) 
+                        if( dist0 < eledist):
+                            eledist = dist0
+                            idx0 = j
+
+                        for k in range(len(bdtcuts)):
+                            if(bdtdist[k] > dist0 and ch.LowPtElectron_ID[j] > bdtcuts[k]):
+                                bdtdist[k] = dist0
+                                bdtidx[k] = j
+
+                    if( not dRcut(eledist) ):
+                        bRejectedAsLowPt = True
+                    else:
+                        misidentifiedAsLowPtElectron = idx0
+
+                        Fill1D(histos['MatchedBKBDTID'], ch.LowPtElectron_ID[misidentifiedAsLowPtElectron])
+                        Fill1D(histos['MatchedBKBDTembeddedID'], ch.LowPtElectron_embeddedID[misidentifiedAsLowPtElectron])
+                        histos['MatchedBKBDT2D'].Fill(ch.LowPtElectron_ID[misidentifiedAsLowPtElectron], ch.LowPtElectron_embeddedID[misidentifiedAsLowPtElectron])
+
+                    for k in range(len(bdtcuts)):
+                        if(not dRcut(bdtdist[k])):
+                            abRejectedAsLowPtBDT[k] = True
 
                     
+                # Try as IPP
+                bRejectedAsIPP = False
+                abRejectedAsIPPCutBased = [False,False,False]
+                abRejectedAsIPPMVA = [False,False]
+                fPairDist = 100000
+                iPairIdx = -1
+                for j in range(len(aPhotonIsoTrackPairs)):
+                    dist0 = dR(ch.IsoTrack_eta[i], aPhotonIsoTrackPairs[j].GetEta(), ch.IsoTrack_phi[i], aPhotonIsoTrackPairs[j].GetPhi() ) 
+                    if( dist0 < fPairDist):
+                        fPairDist = dist0
+                        iPairIdx = j
+                if( not dRcut(fPairDist, 0.2) ):
+                    bRejectedAsIPP = True
 
+                fPairDist = 100000
+                iPairIdx = -1
+                for j in range(len(aPhotonIsoTrackPairs_CBLoose)):
+                    dist0 = dR(ch.IsoTrack_eta[i], aPhotonIsoTrackPairs_CBLoose[j].GetEta(), ch.IsoTrack_phi[i], aPhotonIsoTrackPairs_CBLoose[j].GetPhi() ) 
+                    if( dist0 < fPairDist):
+                        fPairDist = dist0
+                        iPairIdx = j
+                if( not dRcut(fPairDist, 0.2) ):
+                    abRejectedAsIPPCutBased[0] = True
+
+                fPairDist = 100000
+                iPairIdx = -1
+                for j in range(len(aPhotonIsoTrackPairs_CBMedium)):
+                    dist0 = dR(ch.IsoTrack_eta[i], aPhotonIsoTrackPairs_CBMedium[j].GetEta(), ch.IsoTrack_phi[i], aPhotonIsoTrackPairs_CBMedium[j].GetPhi() ) 
+                    if( dist0 < fPairDist):
+                        fPairDist = dist0
+                        iPairIdx = j
+                if( not dRcut(fPairDist, 0.2) ):
+                    abRejectedAsIPPCutBased[1] = True
+
+                fPairDist = 100000
+                iPairIdx = -1
+                for j in range(len(aPhotonIsoTrackPairs_CBTight)):
+                    dist0 = dR(ch.IsoTrack_eta[i], aPhotonIsoTrackPairs_CBTight[j].GetEta(), ch.IsoTrack_phi[i], aPhotonIsoTrackPairs_CBTight[j].GetPhi() ) 
+                    if( dist0 < fPairDist):
+                        fPairDist = dist0
+                        iPairIdx = j
+                if( not dRcut(fPairDist, 0.2) ):
+                    abRejectedAsIPPCutBased[2] = True
+
+                fPairDist = 100000
+                iPairIdx = -1
+                for j in range(len(aPhotonIsoTrackPairs_MVA90)):
+                    dist0 = dR(ch.IsoTrack_eta[i], aPhotonIsoTrackPairs_MVA90[j].GetEta(), ch.IsoTrack_phi[i], aPhotonIsoTrackPairs_MVA90[j].GetPhi() ) 
+                    if( dist0 < fPairDist):
+                        fPairDist = dist0
+                        iPairIdx = j
+                if( not dRcut(fPairDist, 0.2) ):
+                    abRejectedAsIPPMVA[0] = True
+
+                fPairDist = 100000
+                iPairIdx = -1
+                for j in range(len(aPhotonIsoTrackPairs_MVA80)):
+                    dist0 = dR(ch.IsoTrack_eta[i], aPhotonIsoTrackPairs_MVA80[j].GetEta(), ch.IsoTrack_phi[i], aPhotonIsoTrackPairs_MVA80[j].GetPhi() ) 
+                    if( dist0 < fPairDist):
+                        fPairDist = dist0
+                        iPairIdx = j
+                if( not dRcut(fPairDist, 0.2) ):
+                    abRejectedAsIPPMVA[1] = True
+
+                ###############################
+                ## FILL BK REJECT HISTOGRAMS ##
+                ###############################
+
+                if(bRejectedAsStandard):
+                    # idk what is up with overflow, but for some reason it needs to be added here:
+                    histos['RejectBKasStandard_Pt'].Fill( pt)
+                    histos['RejectBKasStandard_Eta'].Fill( ch.IsoTrack_eta[i])
+                    histos['RejectBKasStandard_Phi'].Fill( ch.IsoTrack_phi[i])
                     if(bUseVertex):
-                        Fill1D(histos['RecoFixedEleVtxx'], ch.GenPart_vx[i])
-                        Fill1D(histos['RecoFixedEleVtxy'], ch.GenPart_vy[i])
-                        Fill1D(histos['RecoFixedEleVtxz'], ch.GenPart_vz[i])
-                        Fill1D(histos['RecoFixedEleDxy'], GenPart_dxy)
-                        Fill1D(histos['RecoFixedEleDz'], GenPart_dz)
-                        Fill1D(histos['RecoFixedEleDxyAbs'], abs(GenPart_dxy))
-                        Fill1D(histos['RecoFixedEleDzAbs'], abs(GenPart_dz))
+                        histos['RejectBKasStandard_DxyAbs'].Fill( IsoTrack_dxyAbs)
+                        histos['RejectBKasStandard_DzAbs'].Fill( IsoTrack_dzAbs)
 
-                        Fill1D(histos['RecoFixedExtrapolEleVtxx'], ch.GenPart_vx[i])
-                        Fill1D(histos['RecoFixedExtrapolEleVtxy'], ch.GenPart_vy[i])
-                        Fill1D(histos['RecoFixedExtrapolEleVtxz'], ch.GenPart_vz[i])
-                        Fill1D(histos['RecoFixedExtrapolEleDxy'], GenPart_dxy)
-                        Fill1D(histos['RecoFixedExtrapolEleDz'], GenPart_dz)
-                        Fill1D(histos['RecoFixedExtrapolEleDxyAbs'], abs(GenPart_dxy))
-                        Fill1D(histos['RecoFixedExtrapolEleDzAbs'], abs(GenPart_dz))
+                if(abRejectedAsStandardCutBased[0]):
+                    # idk what is up with overflow, but for some reason it needs to be added here:
+                    histos['RejectBKasStandard_CBVeto_Pt'].Fill( pt)
+                    if(bUseVertex):
+                        histos['RejectBKasStandard_CBVeto_DxyAbs'].Fill( IsoTrack_dxyAbs)
+                if( abRejectedAsStandardCutBased[1] ):
+                    histos['RejectBKasStandard_CBLoose_Pt'].Fill( pt)
+                    if(bUseVertex):
+                        histos['RejectBKasStandard_CBLoose_DxyAbs'].Fill( IsoTrack_dxyAbs)
+                if( abRejectedAsStandardCutBased[2] ):
+                    histos['RejectBKasStandard_CBMedium_Pt'].Fill( pt)
+                    if(bUseVertex):
+                        histos['RejectBKasStandard_CBMedium_DxyAbs'].Fill( IsoTrack_dxyAbs)
+                if( abRejectedAsStandardCutBased[3] ):
+                    histos['RejectBKasStandard_CBTight_Pt'].Fill( pt)
+                    if(bUseVertex):
+                        histos['RejectBKasStandard_CBTight_DxyAbs'].Fill( IsoTrack_dxyAbs)
+  
 
-                        histos['RecoFixedExtrapolPtDxy2D'].Fill( ch.GenPart_pt[i], abs(GenPart_dxy) )
-                        histos['RecoFixedPtDxy2D'].Fill( ch.GenPart_pt[i], abs(GenPart_dxy) )
-                        
+                if(abRejectedAsStandardMVA[0]):
+                    # idk what is up with overflow, but for some reason it needs to be added here:
+                    histos['RejectBKasStandard_mvaNoIsoWPL_Pt'].Fill( pt)
+                    histos['RejectBKasStandard_mvaNoIsoWPL_Eta'].Fill( ch.IsoTrack_eta[i])
+                    histos['RejectBKasStandard_mvaNoIsoWPL_Phi'].Fill( ch.IsoTrack_phi[i])
+                    if(bUseVertex):
+                        histos['RejectBKasStandard_mvaNoIsoWPL_DxyAbs'].Fill( IsoTrack_dxyAbs)
+                        histos['RejectBKasStandard_mvaNoIsoWPL_DzAbs'].Fill( IsoTrack_dzAbs)
+
+                if(abRejectedAsStandardMVA[1]):
+                    # idk what is up with overflow, but for some reason it needs to be added here:
+                    histos['RejectBKasStandard_mvaNoIsoWP90_Pt'].Fill( pt)
+                    histos['RejectBKasStandard_mvaNoIsoWP90_Eta'].Fill( ch.IsoTrack_eta[i])
+                    histos['RejectBKasStandard_mvaNoIsoWP90_Phi'].Fill( ch.IsoTrack_phi[i])
+                    if(bUseVertex):
+                        histos['RejectBKasStandard_mvaNoIsoWP90_DxyAbs'].Fill( IsoTrack_dxyAbs)
+                        histos['RejectBKasStandard_mvaNoIsoWP90_DzAbs'].Fill( IsoTrack_dzAbs)
+
+                if(abRejectedAsStandardMVA[2]):
+                    # idk what is up with overflow, but for some reason it needs to be added here:
+                    histos['RejectBKasStandard_mvaNoIsoWP80_Pt'].Fill( pt)
+                    histos['RejectBKasStandard_mvaNoIsoWP80_Eta'].Fill( ch.IsoTrack_eta[i])
+                    histos['RejectBKasStandard_mvaNoIsoWP80_Phi'].Fill( ch.IsoTrack_phi[i])
+                    if(bUseVertex):
+                        histos['RejectBKasStandard_mvaNoIsoWP80_DxyAbs'].Fill( IsoTrack_dxyAbs)
+                        histos['RejectBKasStandard_mvaNoIsoWP80_DzAbs'].Fill( IsoTrack_dzAbs)
 
 
 
-                # Extended reco 2.0
-                # match not found electrons to isotrack-photon pairs
+                if( bRejectedAsLowPt ):
+                    # record lowptElectron reco efficiency, on its own
+                    Fill1D(histos['RejectBKasLowPt_Pt'], pt)
+                    Fill1D(histos['RejectBKasLowPt_Eta'], ch.IsoTrack_eta[i])
+                    Fill1D(histos['RejectBKasLowPt_Phi'], ch.IsoTrack_phi[i])
+                    if(bUseVertex):
+                        Fill1D(histos['RejectBKasLowPt_DxyAbs'], IsoTrack_dxyAbs)
+                        Fill1D(histos['RejectBKasLowPt_DzAbs'], IsoTrack_dzAbs)
 
-
-                if( eleIdx == -1):
-                    # reco ele not found - check if there is a reco-ed photon
-                    # Recover efficiency by looking for photon, but this has big background
-                    # Check if there is an isotrack for true ele -> then the isotrack is the detected ele
-
-
-                    fPairDist = 100000
-                    iPairIdx = -1
-                    for j in range(len(aPhotonIsoTrackPairs)):
-                        
-                        dist0 = dR(ch.GenPart_eta[i], aPhotonIsoTrackPairs[j].GetEta(), ch.GenPart_phi[i], aPhotonIsoTrackPairs[j].GetPhi() ) 
-
-                        if( dist0 < fPairDist):
-                            fPairDist = dist0
-                            iPairIdx = j
+                    # if also no standard ele: rejected Standard+Lowpt ->> moved to end
 
                     
-                    if( dRcut(fPairDist, 0.2) ):
-                        Fill1D(histos['RecoFixedElePt'], ch.GenPart_pt[i])
-                        Fill1D(histos['RecoFixedEleEta'], ch.GenPart_eta[i])
-                        Fill1D(histos['RecoFixedElePhi'], ch.GenPart_phi[i])
+                for k in range(len(bdtcuts)):
+                    if(abRejectedAsLowPtBDT[k]):
+                        Fill1D(histos['RejectBKasLowPt_Pt_BDT'+str(bdtcuts[k])], pt)
+                        if(bUseVertex):
+                            Fill1D(histos['RejectBKasLowPt_DxyAbs_BDT'+str(bdtcuts[k])], IsoTrack_dxyAbs)
+
+
+
+                if(bRejectedAsIPP):
+                    Fill1D(histos['RejectBKasIPP_Pt'], pt)
+                    Fill1D(histos['RejectBKasIPP_Eta'], ch.IsoTrack_eta[i])
+                    Fill1D(histos['RejectBKasIPP_Phi'], ch.IsoTrack_phi[i])
+
+                    if(bUseVertex):
+                        Fill1D(histos['RejectBKasIPP_DxyAbs'], IsoTrack_dxyAbs)
+                        Fill1D(histos['RejectBKasIPP_DzAbs'], IsoTrack_dzAbs)
+
+
+
+                    if( misidentifiedAsStandardElectron == -1):
+                        Fill1D(histos['RejectBKasExtended_Pt'], pt)
+                        Fill1D(histos['RejectBKasExtended_Eta'], ch.IsoTrack_eta[i])
+                        Fill1D(histos['RejectBKasExtended_Phi'], ch.IsoTrack_phi[i])
 
                         if(bUseVertex):
-                            Fill1D(histos['RecoFixedEleVtxx'], ch.GenPart_vx[i])
-                            Fill1D(histos['RecoFixedEleVtxy'], ch.GenPart_vy[i])
-                            Fill1D(histos['RecoFixedEleVtxz'], ch.GenPart_vz[i])
-                            Fill1D(histos['RecoFixedEleDxy'], GenPart_dxy)
-                            Fill1D(histos['RecoFixedEleDz'], GenPart_dz)
-                            Fill1D(histos['RecoFixedEleDxyAbs'], abs(GenPart_dxy))
-                            Fill1D(histos['RecoFixedEleDzAbs'], abs(GenPart_dz))
+                            Fill1D(histos['RejectBKasExtended_DxyAbs'], IsoTrack_dxyAbs)
+                            Fill1D(histos['RejectBKasExtended_DzAbs'], IsoTrack_dzAbs)
 
-                            histos['RecoFixedPtDxy2D'].Fill( ch.GenPart_pt[i], abs(GenPart_dxy) )
         
-                        # these are not filled when ele is found, just here:
-                        Fill1D(histos['RecoPhotonPlusIsoTrackPt'], ch.GenPart_pt[i])
-                        Fill1D(histos['RecoPhotonPlusIsoTrackEta'], ch.GenPart_eta[i])
-                        Fill1D(histos['RecoPhotonPlusIsoTrackPhi'], ch.GenPart_phi[i])
-                        if(bUseVertex):
-                            Fill1D(histos['RecoPhotonPlusIsoTrackDxyAbs'], abs(GenPart_dxy))
-                            Fill1D(histos['RecoPhotonPlusIsoTrackDzAbs'], abs(GenPart_dz))
-
-
-                    if(bExtrapolate):
-                        fPairDist = 100000
-                        iPairIdx = -1
-                        for j in range(len(aPhotonIsoTrackExtrapolPairs)):
-                            
-                            dist0 = dR(ch.GenPart_eta[i], aPhotonIsoTrackExtrapolPairs[j].GetEta(), ch.GenPart_phi[i], aPhotonIsoTrackExtrapolPairs[j].GetPhi()) 
-
-                            if( dist0 < fPairDist):
-                                fPairDist = dist0
-                                iPairIdx = j
-
-                        
-                        if( dRcut(fPairDist, 0.2) ):
-                            Fill1D(histos['RecoFixedExtrapolElePt'], ch.GenPart_pt[i])
-                            Fill1D(histos['RecoFixedExtrapolEleEta'], ch.GenPart_eta[i])
-                            Fill1D(histos['RecoFixedExtrapolElePhi'], ch.GenPart_phi[i])
+                        # if also no lowpt, then rejected extended+lowpt
+                        if(misidentifiedAsLowPtElectron == -1):
+                            Fill1D(histos['RejectBKasExtended&&LowPt_Pt'], pt)
+                            Fill1D(histos['RejectBKasExtended&&LowPt_Eta'], ch.IsoTrack_eta[i])
+                            Fill1D(histos['RejectBKasExtended&&LowPt_Phi'], ch.IsoTrack_phi[i])
 
                             if(bUseVertex):
-                                Fill1D(histos['RecoFixedExtrapolEleVtxx'], ch.GenPart_vx[i])
-                                Fill1D(histos['RecoFixedExtrapolEleVtxy'], ch.GenPart_vy[i])
-                                Fill1D(histos['RecoFixedExtrapolEleVtxz'], ch.GenPart_vz[i])
-                                Fill1D(histos['RecoFixedExtrapolEleDxy'], GenPart_dxy)
-                                Fill1D(histos['RecoFixedExtrapolEleDz'], GenPart_dz)
-                                Fill1D(histos['RecoFixedExtrapolEleDxyAbs'], abs(GenPart_dxy))
-                                Fill1D(histos['RecoFixedExtrapolEleDzAbs'], abs(GenPart_dz))
-
-                                histos['RecoFixedExtrapolPtDxy2D'].Fill( ch.GenPart_pt[i], abs(GenPart_dxy) )
-        
+                                Fill1D(histos['RejectBKasExtended&&LowPt_DxyAbs'], IsoTrack_dxyAbs)
+                                Fill1D(histos['RejectBKasExtended&&LowPt_DzAbs'], IsoTrack_dzAbs)
 
 
-                # just isotracks
-                isodist = 100000
-                isoIdx = -1
-                idx0 = -1
-                
-                for j in range(ch.nIsoTrack):
-                    dist0 = dR(ch.GenPart_eta[i], ch.IsoTrack_eta[j], ch.GenPart_phi[i], ch.IsoTrack_phi[j] ) 
-                    if( dist0 < isodist):
-                        isodist = dist0
-                        idx0 = j
-                if( dRcut(isodist,0.2) ):
-                    Fill1D(histos['IsoTrackPt'], ch.GenPart_pt[i])
-                    Fill1D(histos['IsoTrackEta'], ch.GenPart_eta[i])
-                    Fill1D(histos['IsoTrackPhi'], ch.GenPart_phi[i])
+                    if( misidentifiedAsLowPtElectron == -1):
+                        Fill1D(histos['RejectBKasIPP&&LowPt_Pt'], pt)
+                        Fill1D(histos['RejectBKasIPP&&LowPt_Eta'], ch.IsoTrack_eta[i])
+                        Fill1D(histos['RejectBKasIPP&&LowPt_Phi'], ch.IsoTrack_phi[i])
 
+                        if(bUseVertex):
+                            Fill1D(histos['RejectBKasIPP&&LowPt_DxyAbs'], IsoTrack_dxyAbs)
+                            Fill1D(histos['RejectBKasIPP&&LowPt_DzAbs'], IsoTrack_dzAbs)
+
+    
+                if(abRejectedAsIPPCutBased[0]):
+                    Fill1D(histos['RejectBKasIPP_CBLoose_Pt'], pt)
                     if(bUseVertex):
-                        Fill1D(histos['IsoTrackVtxx'], ch.GenPart_vx[i])
-                        Fill1D(histos['IsoTrackVtxy'], ch.GenPart_vy[i])
-                        Fill1D(histos['IsoTrackVtxz'], ch.GenPart_vz[i])
-                        Fill1D(histos['IsoTrackDxy'], GenPart_dxy)
-                        Fill1D(histos['IsoTrackDz'], GenPart_dz)
-                        Fill1D(histos['IsoTrackDxyAbs'], abs(GenPart_dxy))
-                        Fill1D(histos['IsoTrackDzAbs'], abs(GenPart_dz))
-                    isoIdx = idx0
-
-
-                # just photon
-                phodist = 100000
-                iPhoIdx = -1
-                for j in range(ch.nPhoton):
-                    dist0 = dR(ch.GenPart_eta[i], ch.Photon_eta[j], ch.GenPart_phi[i], ch.Photon_phi[j] ) 
-                    if( dist0 < phodist):
-                        phodist = dist0
-                        iPhoIdx = j
-                if( dRcut(phodist,0.2) ):
-                    Fill1D(histos['RecoPhotonPt'], ch.GenPart_pt[i])
-                    Fill1D(histos['RecoPhotonEta'], ch.GenPart_eta[i])
-                    Fill1D(histos['RecoPhotonPhi'], ch.GenPart_phi[i])
+                        Fill1D(histos['RejectBKasIPP_CBLoose_DxyAbs'], IsoTrack_dxyAbs)
+                if(abRejectedAsIPPCutBased[1]):
+                    Fill1D(histos['RejectBKasIPP_CBMedium_Pt'], pt)
                     if(bUseVertex):
-                        Fill1D(histos['RecoPhotonVtxx'], ch.GenPart_vx[i])
-                        Fill1D(histos['RecoPhotonVtxy'], ch.GenPart_vy[i])
-                        Fill1D(histos['RecoPhotonVtxz'], ch.GenPart_vz[i])
-                        Fill1D(histos['RecoPhotonDxy'], GenPart_dxy)
-                        Fill1D(histos['RecoPhotonDz'], GenPart_dz)
-                        Fill1D(histos['RecoPhotonDxyAbs'], abs(GenPart_dxy))
-                        Fill1D(histos['RecoPhotonDzAbs'], abs(GenPart_dz))
-
-                histos['dRControlPlot2D'].Fill(isodist,phodist)
-
-
-        # background calculation
-        # create background
-        background = []
-        for iTR in range(ch.nIsoTrack):
-            min_dRele = 1000
-            minIEle = -1
-            min_dRbackgnd = 1000
-            minIBackgnd = -1
-
-            for iMC in range(ch.nGenPart):
-                temp_dR = dR(ch.GenPart_eta[iMC], ch.IsoTrack_eta[iTR], ch.GenPart_phi[iMC], ch.IsoTrack_phi[iTR])
-                if abs(ch.GenPart_pdgId[iMC]) == 11:
-                    if( temp_dR < min_dRele):
-                        min_dRele = temp_dR
-                        minIEle = iMC
-                else:
-                    if(temp_dR < min_dRbackgnd):
-                        min_dRbackgnd = temp_dR
-                        minIBackgnd = iMC
-
-            # FIXME: Ide nem kellene dR cut?????
-            #if( minIBackgnd != -1):
-            if( dRcut(min_dRbackgnd,0.2)):
-                if(not dRcut(min_dRele,0.2) ):
-                    background.append(minIBackgnd)
-
-                    # this is the denom:
-                    histos['TrueBackgroundPt'].Fill( ch.GenPart_pt[minIBackgnd])
-                    histos['TrueBackgroundEta'].Fill( ch.GenPart_eta[minIBackgnd])
-                    histos['TrueBackgroundPhi'].Fill( ch.GenPart_phi[minIBackgnd])
+                        Fill1D(histos['RejectBKasIPP_CBMedium_DxyAbs'], IsoTrack_dxyAbs)
+                if(abRejectedAsIPPCutBased[2]):
+                    Fill1D(histos['RejectBKasIPP_CBTight_Pt'], pt)
                     if(bUseVertex):
-                        histos['TrueBackgroundDxyAbs'].Fill( abs(getdxy(minIBackgnd, ch)))
-                        histos['TrueBackgroundDzAbs'].Fill( abs(getdz(minIBackgnd, ch)))
-
-        # To get background rejection: redo the matching, but work on the true background as input sample:
-        for iBK in range(len(background)):
-
-            i = background[iBK]
-            
-            eledist = 100000
-            eleIdx = -1
-            idx0 = -1
-            for j in range(ch.nElectron):
-
-                # remove isolation
-                #eleVID(ch.Electron_vidNestedWPBitmap[j], 0, removedCuts=['pfRelIso03_all'])
-
-                dist0 = dR(ch.GenPart_eta[i], ch.Electron_eta[j], ch.GenPart_phi[i], ch.Electron_phi[j] ) 
-                if( dist0 < eledist):
-                    eledist = dist0
-                    idx0 = j
-            # not dRcut: background REJECTION efficiency
-            if( not dRcut(eledist) ):
-                histos['RejectBackgroundPt'].Fill( ch.GenPart_pt[i])
-                histos['RejectBackgroundEta'].Fill( ch.GenPart_eta[i])
-                histos['RejectBackgroundPhi'].Fill( ch.GenPart_phi[i])
-                if(bUseVertex):
-                    histos['RejectBackgroundDxyAbs'].Fill( abs(getdxy(i, ch)))
-                    histos['RejectBackgroundDzAbs'].Fill( abs(getdz(i, ch)))
-            else:
-                eleIdx = idx0 
-
-
-            # attempt reco fix
-            if( eleIdx == -1 ):
-                # match isotracks
-                isodist = 100000
-                isoIdx = -1
-                idx0 = -1
-                for j in range(ch.nIsoTrack):
-                    dist0 = dR(ch.GenPart_eta[i], ch.IsoTrack_eta[j], ch.GenPart_phi[i], ch.IsoTrack_phi[j] ) 
-                    if( dist0 < isodist):
-                        isodist = dist0
-                        idx0 = j
-                if( dRcut(isodist,0.2) ):
-                    isoIdx = idx0
-
-                # reco ele not found - check if there is a reco-ed photon
-                there_is_reco_photon = False
-                for j in range(ch.nPhoton):
-                    dist0 = dR(ch.GenPart_eta[i], ch.Photon_eta[j], ch.GenPart_phi[i], ch.Photon_phi[j] )
-                    if( dRcut(dist0, 0.2) ):
-                        there_is_reco_photon = True
-                        break
-                
-                if( not there_is_reco_photon or isoIdx == -1):
-                    histos['RejectBackgroundRecoFixPt'].Fill( ch.GenPart_pt[i])
-                    histos['RejectBackgroundRecoFixEta'].Fill( ch.GenPart_eta[i])
-                    histos['RejectBackgroundRecoFixPhi'].Fill( ch.GenPart_phi[i])
+                        Fill1D(histos['RejectBKasIPP_CBTight_DxyAbs'], IsoTrack_dxyAbs)
+                if(abRejectedAsIPPCutBased[0]):
+                    Fill1D(histos['RejectBKasIPP_MVA90_Pt'], pt)
                     if(bUseVertex):
-                        histos['RejectBackgroundRecoFixDxyAbs'].Fill( abs(getdxy(i, ch)))
-                        histos['RejectBackgroundRecoFixDzAbs'].Fill( abs(getdz(i, ch)))
+                        Fill1D(histos['RejectBKasIPP_MVA90_DxyAbs'], IsoTrack_dxyAbs)
+                if(abRejectedAsIPPCutBased[1]):
+                    Fill1D(histos['RejectBKasIPP_MVA80_Pt'], pt)
+                    if(bUseVertex):
+                        Fill1D(histos['RejectBKasIPP_MVA80_DxyAbs'], IsoTrack_dxyAbs)
+
+
+                for k in range(len(bdtcuts)):
+                    if(abRejectedAsLowPtBDT[k] and bRejectedAsIPP):
+                        Fill1D(histos['RejectBKasIPP&&LowPt_Pt_BDT'+str(bdtcuts[k])], pt)
+                        if(bUseVertex):
+                            Fill1D(histos['RejectBKasIPP&&LowPt_DxyAbs_BDT'+str(bdtcuts[k])], IsoTrack_dxyAbs)
+
+                    if(abRejectedAsLowPtBDT[k] and abRejectedAsIPPCutBased[0]):
+                        Fill1D(histos['RejectBKasIPP_CBLoose&&LowPt_Pt_BDT'+str(bdtcuts[k])], pt)
+                        if(bUseVertex):
+                            Fill1D(histos['RejectBKasIPP_CBLoose&&LowPt_DxyAbs_BDT'+str(bdtcuts[k])], IsoTrack_dxyAbs)
+
+                    if(abRejectedAsLowPtBDT[k] and abRejectedAsIPPCutBased[1]):
+                        Fill1D(histos['RejectBKasIPP_CBMedium&&LowPt_Pt_BDT'+str(bdtcuts[k])], pt)
+                        if(bUseVertex):
+                            Fill1D(histos['RejectBKasIPP_CBMedium&&LowPt_DxyAbs_BDT'+str(bdtcuts[k])], IsoTrack_dxyAbs)
+
+                    if(abRejectedAsLowPtBDT[k] and abRejectedAsIPPCutBased[2]):
+                        Fill1D(histos['RejectBKasIPP_CBTight&&LowPt_Pt_BDT'+str(bdtcuts[k])], pt)
+                        if(bUseVertex):
+                            Fill1D(histos['RejectBKasIPP_CBTight&&LowPt_DxyAbs_BDT'+str(bdtcuts[k])], IsoTrack_dxyAbs)
+
+                    if(abRejectedAsLowPtBDT[k] and abRejectedAsIPPMVA[0]):
+                        Fill1D(histos['RejectBKasIPP_MVA90&&LowPt_Pt_BDT'+str(bdtcuts[k])], pt)
+                        if(bUseVertex):
+                            Fill1D(histos['RejectBKasIPP_MVA90&&LowPt_DxyAbs_BDT'+str(bdtcuts[k])], IsoTrack_dxyAbs)
+
+                    if(abRejectedAsLowPtBDT[k] and abRejectedAsIPPMVA[1]):
+                        Fill1D(histos['RejectBKasIPP_MVA80&&LowPt_Pt_BDT'+str(bdtcuts[k])], pt)
+                        if(bUseVertex):
+                            Fill1D(histos['RejectBKasIPP_MVA80&&LowPt_DxyAbs_BDT'+str(bdtcuts[k])], IsoTrack_dxyAbs)
+
+
+
+
+                if(abRejectedAsStandardCutBased[0] and bRejectedAsIPP):
+                    # idk what is up with overflow, but for some reason it needs to be added here:
+                    histos['RejectBKasExtended_CBVeto_Pt'].Fill( pt)
+                    if(bUseVertex):
+                        histos['RejectBKasExtended_CBVeto_DxyAbs'].Fill( IsoTrack_dxyAbs)
+                if( abRejectedAsStandardCutBased[1]  and bRejectedAsIPP):
+                    histos['RejectBKasExtended_CBLoose_Pt'].Fill( pt)
+                    if(bUseVertex):
+                        histos['RejectBKasExtended_CBLoose_DxyAbs'].Fill( IsoTrack_dxyAbs)
+                if( abRejectedAsStandardCutBased[2]  and bRejectedAsIPP):
+                    histos['RejectBKasExtended_CBMedium_Pt'].Fill( pt)
+                    if(bUseVertex):
+                        histos['RejectBKasExtended_CBMedium_DxyAbs'].Fill( IsoTrack_dxyAbs)
+                if( abRejectedAsStandardCutBased[3]  and bRejectedAsIPP):
+                    histos['RejectBKasExtended_CBTight_Pt'].Fill( pt)
+                    if(bUseVertex):
+                        histos['RejectBKasExtended_CBTight_DxyAbs'].Fill( IsoTrack_dxyAbs)
+
+
+                if(abRejectedAsStandardCutBased[0] and abRejectedAsIPPCutBased[0]):
+                    histos['RejectBKasExtended_CBVeto_PhoCBLoose_Pt'].Fill( pt)
+                    if(bUseVertex):
+                        histos['RejectBKasExtended_CBVeto_PhoCBLoose_DxyAbs'].Fill( IsoTrack_dxyAbs)
+                if( abRejectedAsStandardCutBased[1]  and abRejectedAsIPPCutBased[0]):
+                    histos['RejectBKasExtended_CBLoose_PhoCBLoose_Pt'].Fill( pt)
+                    if(bUseVertex):
+                        histos['RejectBKasExtended_CBLoose_PhoCBLoose_DxyAbs'].Fill( IsoTrack_dxyAbs)
+                if( abRejectedAsStandardCutBased[2]  and abRejectedAsIPPCutBased[0]):
+                    histos['RejectBKasExtended_CBMedium_PhoCBLoose_Pt'].Fill( pt)
+                    if(bUseVertex):
+                        histos['RejectBKasExtended_CBMedium_PhoCBLoose_DxyAbs'].Fill( IsoTrack_dxyAbs)
+                if( abRejectedAsStandardCutBased[3]  and abRejectedAsIPPCutBased[0]):
+                    histos['RejectBKasExtended_CBTight_PhoCBLoose_Pt'].Fill( pt)
+                    if(bUseVertex):
+                        histos['RejectBKasExtended_CBTight_PhoCBLoose_DxyAbs'].Fill( IsoTrack_dxyAbs)
+
+
+                if(abRejectedAsStandardCutBased[0] and abRejectedAsIPPCutBased[1]):
+                    histos['RejectBKasExtended_CBVeto_PhoCBMedium_Pt'].Fill( pt)
+                    if(bUseVertex):
+                        histos['RejectBKasExtended_CBVeto_PhoCBMedium_DxyAbs'].Fill( IsoTrack_dxyAbs)
+                if( abRejectedAsStandardCutBased[1]  and abRejectedAsIPPCutBased[1]):
+                    histos['RejectBKasExtended_CBLoose_PhoCBMedium_Pt'].Fill( pt)
+                    if(bUseVertex):
+                        histos['RejectBKasExtended_CBLoose_PhoCBMedium_DxyAbs'].Fill( IsoTrack_dxyAbs)
+                if( abRejectedAsStandardCutBased[2]  and abRejectedAsIPPCutBased[1]):
+                    histos['RejectBKasExtended_CBMedium_PhoCBMedium_Pt'].Fill( pt)
+                    if(bUseVertex):
+                        histos['RejectBKasExtended_CBMedium_PhoCBMedium_DxyAbs'].Fill( IsoTrack_dxyAbs)
+                if( abRejectedAsStandardCutBased[3]  and abRejectedAsIPPCutBased[1]):
+                    histos['RejectBKasExtended_CBTight_PhoCBMedium_Pt'].Fill( pt)
+                    if(bUseVertex):
+                        histos['RejectBKasExtended_CBTight_PhoCBMedium_DxyAbs'].Fill( IsoTrack_dxyAbs)
+
+                if(abRejectedAsStandardCutBased[0] and abRejectedAsIPPCutBased[2]):
+                    histos['RejectBKasExtended_CBVeto_PhoCBTight_Pt'].Fill( pt)
+                    if(bUseVertex):
+                        histos['RejectBKasExtended_CBVeto_PhoCBTight_DxyAbs'].Fill( IsoTrack_dxyAbs)
+                if( abRejectedAsStandardCutBased[1]  and abRejectedAsIPPCutBased[2]):
+                    histos['RejectBKasExtended_CBLoose_PhoCBTight_Pt'].Fill( pt)
+                    if(bUseVertex):
+                        histos['RejectBKasExtended_CBLoose_PhoCBTight_DxyAbs'].Fill( IsoTrack_dxyAbs)
+                if( abRejectedAsStandardCutBased[2]  and abRejectedAsIPPCutBased[2]):
+                    histos['RejectBKasExtended_CBMedium_PhoCBTight_Pt'].Fill( pt)
+                    if(bUseVertex):
+                        histos['RejectBKasExtended_CBMedium_PhoCBTight_DxyAbs'].Fill( IsoTrack_dxyAbs)
+                if( abRejectedAsStandardCutBased[3]  and abRejectedAsIPPCutBased[2]):
+                    histos['RejectBKasExtended_CBTight_PhoCBTight_Pt'].Fill( pt)
+                    if(bUseVertex):
+                        histos['RejectBKasExtended_CBTight_PhoCBTight_DxyAbs'].Fill( IsoTrack_dxyAbs)
+
+                if(abRejectedAsStandardCutBased[0] and abRejectedAsIPPMVA[0]):
+                    histos['RejectBKasExtended_CBVeto_PhoMVA90_Pt'].Fill( pt)
+                    if(bUseVertex):
+                        histos['RejectBKasExtended_CBVeto_PhoMVA90_DxyAbs'].Fill( IsoTrack_dxyAbs)
+                if( abRejectedAsStandardCutBased[1]  and abRejectedAsIPPMVA[0]):
+                    histos['RejectBKasExtended_CBLoose_PhoMVA90_Pt'].Fill( pt)
+                    if(bUseVertex):
+                        histos['RejectBKasExtended_CBLoose_PhoMVA90_DxyAbs'].Fill( IsoTrack_dxyAbs)
+                if( abRejectedAsStandardCutBased[2]  and abRejectedAsIPPMVA[0]):
+                    histos['RejectBKasExtended_CBMedium_PhoMVA90_Pt'].Fill( pt)
+                    if(bUseVertex):
+                        histos['RejectBKasExtended_CBMedium_PhoMVA90_DxyAbs'].Fill( IsoTrack_dxyAbs)
+                if( abRejectedAsStandardCutBased[3]  and abRejectedAsIPPMVA[0]):
+                    histos['RejectBKasExtended_CBTight_PhoMVA90_Pt'].Fill( pt)
+                    if(bUseVertex):
+                        histos['RejectBKasExtended_CBTight_PhoMVA90_DxyAbs'].Fill( IsoTrack_dxyAbs)
+
+                if(abRejectedAsStandardCutBased[0] and abRejectedAsIPPMVA[1]):
+                    histos['RejectBKasExtended_CBVeto_PhoMVA80_Pt'].Fill( pt)
+                    if(bUseVertex):
+                        histos['RejectBKasExtended_CBVeto_PhoMVA80_DxyAbs'].Fill( IsoTrack_dxyAbs)
+                if( abRejectedAsStandardCutBased[1]  and abRejectedAsIPPMVA[1]):
+                    histos['RejectBKasExtended_CBLoose_PhoMVA80_Pt'].Fill( pt)
+                    if(bUseVertex):
+                        histos['RejectBKasExtended_CBLoose_PhoMVA80_DxyAbs'].Fill( IsoTrack_dxyAbs)
+                if( abRejectedAsStandardCutBased[2]  and abRejectedAsIPPMVA[1]):
+                    histos['RejectBKasExtended_CBMedium_PhoMVA80_Pt'].Fill( pt)
+                    if(bUseVertex):
+                        histos['RejectBKasExtended_CBMedium_PhoMVA80_DxyAbs'].Fill( IsoTrack_dxyAbs)
+                if( abRejectedAsStandardCutBased[3]  and abRejectedAsIPPMVA[1]):
+                    histos['RejectBKasExtended_CBTight_PhoMVA80_Pt'].Fill( pt)
+                    if(bUseVertex):
+                        histos['RejectBKasExtended_CBTight_PhoMVA80_DxyAbs'].Fill( IsoTrack_dxyAbs)
+
+
+
+
+
+                # Standard and LowPt
+                if(bRejectedAsStandard and bRejectedAsLowPt):
+                    Fill1D(histos['RejectBKasStandard&&LowPt_Pt'], pt)
+                    Fill1D(histos['RejectBKasStandard&&LowPt_Eta'], ch.IsoTrack_eta[i])
+                    Fill1D(histos['RejectBKasStandard&&LowPt_Phi'], ch.IsoTrack_phi[i])
+                    if(bUseVertex):
+                        Fill1D(histos['RejectBKasStandard&&LowPt_DxyAbs'], IsoTrack_dxyAbs)
+                        Fill1D(histos['RejectBKasStandard&&LowPt_DzAbs'], IsoTrack_dzAbs)
+
+                if(abRejectedAsStandardCutBased[0] and bRejectedAsLowPt):
+                    Fill1D(histos['RejectBKasStandard_CBVeto&&LowPt_Pt'], pt)
+                    if(bUseVertex):
+                        Fill1D(histos['RejectBKasStandard_CBVeto&&LowPt_DxyAbs'], IsoTrack_dxyAbs)
+                if(abRejectedAsStandardCutBased[1] and bRejectedAsLowPt):
+                    Fill1D(histos['RejectBKasStandard_CBLoose&&LowPt_Pt'], pt)
+                    if(bUseVertex):
+                        Fill1D(histos['RejectBKasStandard_CBLoose&&LowPt_DxyAbs'], IsoTrack_dxyAbs)
+                if( abRejectedAsStandardCutBased[2] and bRejectedAsLowPt ):
+                    Fill1D(histos['RejectBKasStandard_CBMedium&&LowPt_Pt'], pt)
+                    if(bUseVertex):
+                        Fill1D(histos['RejectBKasStandard_CBMedium&&LowPt_DxyAbs'], IsoTrack_dxyAbs)
+                if( abRejectedAsStandardCutBased[3] and bRejectedAsLowPt ):
+                    Fill1D(histos['RejectBKasStandard_CBTight&&LowPt_Pt'], pt)
+                    if(bUseVertex):
+                        Fill1D(histos['RejectBKasStandard_CBTight&&LowPt_DxyAbs'], IsoTrack_dxyAbs)
+
+                if(abRejectedAsStandardMVA[0] and bRejectedAsLowPt):
+                    Fill1D(histos['RejectBKasStandard_mvaNoIsoWPL&&LowPt_Pt'], pt)
+                    if(bUseVertex):
+                        Fill1D(histos['RejectBKasStandard_mvaNoIsoWPL&&LowPt_DxyAbs'], IsoTrack_dxyAbs)
+                if(abRejectedAsStandardMVA[1] and bRejectedAsLowPt):
+                    Fill1D(histos['RejectBKasStandard_mvaNoIsoWP90&&LowPt_Pt'], pt)
+                    if(bUseVertex):
+                        Fill1D(histos['RejectBKasStandard_mvaNoIsoWP90&&LowPt_DxyAbs'], IsoTrack_dxyAbs)
+                if( abRejectedAsStandardMVA[2] and bRejectedAsLowPt ):
+                    Fill1D(histos['RejectBKasStandard_mvaNoIsoWP80&&LowPt_Pt'], pt)
+                    if(bUseVertex):
+                        Fill1D(histos['RejectBKasStandard_mvaNoIsoWP80&&LowPt_DxyAbs'], IsoTrack_dxyAbs)
+
+
+                        
+
+                for k in range(len(bdtcuts)):
+                    if(bRejectedAsStandard and abRejectedAsLowPtBDT[k]):
+                        Fill1D(histos['RejectBKasStandard&&LowPt_Pt_BDT'+str(bdtcuts[k])], pt)
+                        if(bUseVertex):
+                            Fill1D(histos['RejectBKasStandard&&LowPt_DxyAbs_BDT'+str(bdtcuts[k])], IsoTrack_dxyAbs)
+                    if(abRejectedAsStandardCutBased[0] and abRejectedAsLowPtBDT[k]):
+                        Fill1D(histos['RejectBKasStandard_CBVeto&&LowPt_Pt_BDT'+str(bdtcuts[k])], pt)
+                        if(bUseVertex):
+                            Fill1D(histos['RejectBKasStandard_CBVeto&&LowPt_DxyAbs_BDT'+str(bdtcuts[k])], IsoTrack_dxyAbs)
+                    if(abRejectedAsStandardCutBased[1] and abRejectedAsLowPtBDT[k]):
+                        Fill1D(histos['RejectBKasStandard_CBLoose&&LowPt_Pt_BDT'+str(bdtcuts[k])], pt)
+                        if(bUseVertex):
+                            Fill1D(histos['RejectBKasStandard_CBLoose&&LowPt_DxyAbs_BDT'+str(bdtcuts[k])], IsoTrack_dxyAbs)
+                    if( abRejectedAsStandardCutBased[2] and abRejectedAsLowPtBDT[k] ):
+                        Fill1D(histos['RejectBKasStandard_CBMedium&&LowPt_Pt_BDT'+str(bdtcuts[k])], pt)
+                        if(bUseVertex):
+                            Fill1D(histos['RejectBKasStandard_CBMedium&&LowPt_DxyAbs_BDT'+str(bdtcuts[k])], IsoTrack_dxyAbs)
+                    if( abRejectedAsStandardCutBased[3] and abRejectedAsLowPtBDT[k] ):
+                        Fill1D(histos['RejectBKasStandard_CBTight&&LowPt_Pt_BDT'+str(bdtcuts[k])], pt)
+                        if(bUseVertex):
+                            Fill1D(histos['RejectBKasStandard_CBTight&&LowPt_DxyAbs_BDT'+str(bdtcuts[k])], IsoTrack_dxyAbs)
+
+                    if(abRejectedAsStandardMVA[0] and abRejectedAsLowPtBDT[k]):
+                        Fill1D(histos['RejectBKasStandard_mvaNoIsoWPL&&LowPt_Pt_BDT'+str(bdtcuts[k])], pt)
+                        if(bUseVertex):
+                            Fill1D(histos['RejectBKasStandard_mvaNoIsoWPL&&LowPt_DxyAbs_BDT'+str(bdtcuts[k])], IsoTrack_dxyAbs)
+                    if(abRejectedAsStandardMVA[1] and abRejectedAsLowPtBDT[k]):
+                        Fill1D(histos['RejectBKasStandard_mvaNoIsoWP90&&LowPt_Pt_BDT'+str(bdtcuts[k])], pt)
+                        if(bUseVertex):
+                            Fill1D(histos['RejectBKasStandard_mvaNoIsoWP90&&LowPt_DxyAbs_BDT'+str(bdtcuts[k])], IsoTrack_dxyAbs)
+                    if( abRejectedAsStandardMVA[2] and abRejectedAsLowPtBDT[k] ):
+                        Fill1D(histos['RejectBKasStandard_mvaNoIsoWP80&&LowPt_Pt_BDT'+str(bdtcuts[k])], pt)
+                        if(bUseVertex):
+                            Fill1D(histos['RejectBKasStandard_mvaNoIsoWP80&&LowPt_DxyAbs_BDT'+str(bdtcuts[k])], IsoTrack_dxyAbs)
+
+                    # All 3:
+
+                    if(abRejectedAsStandardMVA[0] and abRejectedAsIPPMVA[0] and abRejectedAsLowPtBDT[k]):
+                        Fill1D(histos['RejectBKasExtended_mvaNoIsoWPL_PhoMVA90&&LowPt_Pt_BDT'+str(bdtcuts[k])], pt)
+                        if(bUseVertex):
+                            Fill1D(histos['RejectBKasExtended_mvaNoIsoWPL_PhoMVA90&&LowPt_DxyAbs_BDT'+str(bdtcuts[k])], IsoTrack_dxyAbs)
+
+                    if(abRejectedAsStandardCutBased[0] and abRejectedAsIPPCutBased[0] and abRejectedAsLowPtBDT[k]):
+                        Fill1D(histos['RejectBKasExtended_CBVeto_PhoCBLoose&&LowPt_Pt_BDT'+str(bdtcuts[k])], pt)
+                        if(bUseVertex):
+                            Fill1D(histos['RejectBKasExtended_CBVeto_PhoCBLoose&&LowPt_DxyAbs_BDT'+str(bdtcuts[k])], IsoTrack_dxyAbs)
+                    if(abRejectedAsStandardCutBased[1] and abRejectedAsIPPCutBased[1] and abRejectedAsLowPtBDT[k]):
+                        Fill1D(histos['RejectBKasExtended_CBLoose_PhoCBMedium&&LowPt_Pt_BDT'+str(bdtcuts[k])], pt)
+                        if(bUseVertex):
+                            Fill1D(histos['RejectBKasExtended_CBLoose_PhoCBMedium&&LowPt_DxyAbs_BDT'+str(bdtcuts[k])], IsoTrack_dxyAbs)
+
+
+
+
+
     # Save histos:
     extrapolate_log.close()
     hfile.Write()
@@ -715,12 +1935,12 @@ nevtcut = n_entries -1 if nEvents == - 1 else nEvents - 1
 
 
 if __name__ == '__main__':
-    print "RecoFixThreaded calculating efficiencies with and without recofix on",Nthreads,"threads."
+    print "RecoFixThreaded calculating efficiencies with and without recofix on",Nthreads,"threads. Sample: "+sample+", ptcut: "+str(ptcut)+((", ptcutHigh: "+str(ptcutHigh)) if options.ptcutHigh != -1 else "")
     proc = {}
     for i in range(Nthreads):
-        it0 = 0 + i * n_entries / Nthreads ;
-        it1 = 0 + (i+1) * n_entries / Nthreads ;
-        proc[i] = multiprocessing.Process(target=RecoAndRecoFix, args=(i, it0, it1, nevtcut, ch))
+        it0 = 0 + i * (nevtcut + 1) / Nthreads 
+        it1 = 0 + (i+1) * (nevtcut + 1) / Nthreads 
+        proc[i] = multiprocessing.Process(target=RecoAndRecoFix, args=(i, it0, it1, nevtcut, ch, ptcut, ptcutHigh, binningSet))
         proc[i].start()
         #print 'Started thread',i
 else:
@@ -733,132 +1953,28 @@ for i in range(Nthreads):
 print("All threads finished. Stacking results...")
 # Stack partial results
 
+highptcutstr = '_ptcutHigh'+str(ptcutHigh) if options.ptcutHigh != -1 else ''
+extrapolstr = '_IPPextrapol' if bExtrapolate else ''
 
-ptBinning = [0, 3.5, 5, 7.5, 10, 12, 14, 16, 18, 20, 30, 40, 50, 100]
-histext = ''
-hfile = ROOT.TFile( 'root_files/RecoFixThreadedSTACK_Sample'+sample+'.root', 'RECREATE')
-savehistos = {}
-savehistos['TrueElePt'] = HistInfo(hname = 'TrueElePt', sample = histext, binning = ptBinning, binopt = 'var', histclass = ROOT.TH1F).make_hist()
-savehistos['TrueEleEta'] = HistInfo(hname = 'TrueEleEta', sample = histext, binning = [30, -3, 3], histclass = ROOT.TH1F).make_hist()
-savehistos['TrueElePhi'] = HistInfo(hname = 'TrueElePhi', sample = histext, binning = [30, -4, 4], histclass = ROOT.TH1F).make_hist()
-savehistos['TrueEleVtxx'] = HistInfo(hname = 'TrueEleVtxx', sample = histext, binning = [40, -1, 1], histclass = ROOT.TH1F).make_hist()
-savehistos['TrueEleVtxy'] = HistInfo(hname = 'TrueEleVtxy', sample = histext, binning = [40, -1, 1], histclass = ROOT.TH1F).make_hist()
-savehistos['TrueEleVtxz'] = HistInfo(hname = 'TrueEleVtxz', sample = histext, binning = [50, -50, 50], histclass = ROOT.TH1F).make_hist()
-savehistos['TrueEleDxy'] = HistInfo(hname = 'TrueEleDxy', sample = histext, binning = [40, -6, 6], histclass = ROOT.TH1F).make_hist()
-savehistos['TrueEleDz'] = HistInfo(hname = 'TrueEleDz', sample = histext, binning = [40, -6, 6], histclass = ROOT.TH1F).make_hist()
-savehistos['TrueEleDxyAbs'] = HistInfo(hname = 'TrueEleDxyAbs', sample = histext, binning = [40, 0, 15], histclass = ROOT.TH1F).make_hist()
-savehistos['TrueEleDzAbs'] = HistInfo(hname = 'TrueEleDzAbs', sample = histext, binning = [40, 0, 15], histclass = ROOT.TH1F).make_hist()
-
-savehistos['RecoElePt'] = HistInfo(hname = 'RecoElePt', sample = histext, binning = ptBinning, binopt = 'var', histclass = ROOT.TH1F).make_hist()
-savehistos['RecoEleEta'] = HistInfo(hname = 'RecoEleEta', sample = histext, binning = [30, -3, 3], histclass = ROOT.TH1F).make_hist()
-savehistos['RecoElePhi'] = HistInfo(hname = 'RecoElePhi', sample = histext, binning = [30, -4, 4], histclass = ROOT.TH1F).make_hist()
-savehistos['RecoEleVtxx'] = HistInfo(hname = 'RecoEleVtxx', sample = histext, binning = [30, -3, 3], histclass = ROOT.TH1F).make_hist()
-savehistos['RecoEleVtxy'] = HistInfo(hname = 'RecoEleVtxy', sample = histext, binning = [30, -3, 3], histclass = ROOT.TH1F).make_hist()
-savehistos['RecoEleVtxz'] = HistInfo(hname = 'RecoEleVtxz', sample = histext, binning = [30, -3, 3], histclass = ROOT.TH1F).make_hist()
-savehistos['RecoEleDxy'] = HistInfo(hname = 'RecoEleDxy', sample = histext, binning = [40, -6, 6], histclass = ROOT.TH1F).make_hist()
-savehistos['RecoEleDz'] = HistInfo(hname = 'RecoEleDz', sample = histext, binning = [40, -6, 6], histclass = ROOT.TH1F).make_hist()
-savehistos['RecoEleDxyAbs'] = HistInfo(hname = 'RecoEleDxyAbs', sample = histext, binning = [40, 0, 15], histclass = ROOT.TH1F).make_hist()
-savehistos['RecoEleDzAbs'] = HistInfo(hname = 'RecoEleDzAbs', sample = histext, binning = [40, 0, 15], histclass = ROOT.TH1F).make_hist()
-
-savehistos['IsoTrackPt'] = HistInfo(hname = 'IsoTrackPt', sample = histext, binning = ptBinning, binopt = 'var', histclass = ROOT.TH1F).make_hist()
-savehistos['IsoTrackEta'] = HistInfo(hname = 'IsoTrackEta', sample = histext, binning = [30, -3, 3], histclass = ROOT.TH1F).make_hist()
-savehistos['IsoTrackPhi'] = HistInfo(hname = 'IsoTrackPhi', sample = histext, binning = [30, -4, 4], histclass = ROOT.TH1F).make_hist()
-savehistos['IsoTrackVtxx'] = HistInfo(hname = 'IsoTrackVtxx', sample = histext, binning = [30, -3, 3], histclass = ROOT.TH1F).make_hist()
-savehistos['IsoTrackVtxy'] = HistInfo(hname = 'IsoTrackVtxy', sample = histext, binning = [30, -3, 3], histclass = ROOT.TH1F).make_hist()
-savehistos['IsoTrackVtxz'] = HistInfo(hname = 'IsoTrackVtxz', sample = histext, binning = [30, -3, 3], histclass = ROOT.TH1F).make_hist()
-savehistos['IsoTrackDxy'] = HistInfo(hname = 'IsoTrackDxy', sample = histext, binning = [40, -6, 6], histclass = ROOT.TH1F).make_hist()
-savehistos['IsoTrackDz'] = HistInfo(hname = 'IsoTrackDz', sample = histext, binning = [40, -6, 6], histclass = ROOT.TH1F).make_hist()
-savehistos['IsoTrackDxyAbs'] = HistInfo(hname = 'IsoTrackDxyAbs', sample = histext, binning = [40, 0, 15], histclass = ROOT.TH1F).make_hist()
-savehistos['IsoTrackDzAbs'] = HistInfo(hname = 'IsoTrackDzAbs', sample = histext, binning = [40, 0, 15], histclass = ROOT.TH1F).make_hist()
-
-savehistos['RecoFixedElePt'] = HistInfo(hname = 'RecoFixedElePt', sample = histext, binning = ptBinning, binopt = 'var', histclass = ROOT.TH1F).make_hist()
-savehistos['RecoFixedEleEta'] = HistInfo(hname = 'RecoFixedEleEta', sample = histext, binning = [30, -3, 3], histclass = ROOT.TH1F).make_hist()
-savehistos['RecoFixedElePhi'] = HistInfo(hname = 'RecoFixedElePhi', sample = histext, binning = [30, -4, 4], histclass = ROOT.TH1F).make_hist()
-savehistos['RecoFixedEleVtxx'] = HistInfo(hname = 'RecoFixedEleVtxx', sample = histext, binning = [30, -3, 3], histclass = ROOT.TH1F).make_hist()
-savehistos['RecoFixedEleVtxy'] = HistInfo(hname = 'RecoFixedEleVtxy', sample = histext, binning = [30, -3, 3], histclass = ROOT.TH1F).make_hist()
-savehistos['RecoFixedEleVtxz'] = HistInfo(hname = 'RecoFixedEleVtxz', sample = histext, binning = [30, -3, 3], histclass = ROOT.TH1F).make_hist()
-savehistos['RecoFixedEleDxy'] = HistInfo(hname = 'RecoFixedEleDxy', sample = histext, binning = [40, -6, 6], histclass = ROOT.TH1F).make_hist()
-savehistos['RecoFixedEleDz'] = HistInfo(hname = 'RecoFixedEleDz', sample = histext, binning = [40, -6, 6], histclass = ROOT.TH1F).make_hist()
-savehistos['RecoFixedEleDxyAbs'] = HistInfo(hname = 'RecoFixedEleDxyAbs', sample = histext, binning = [40, 0, 15], histclass = ROOT.TH1F).make_hist()
-savehistos['RecoFixedEleDzAbs'] = HistInfo(hname = 'RecoFixedEleDzAbs', sample = histext, binning = [40, 0, 15], histclass = ROOT.TH1F).make_hist()
+hfile = ROOT.TFile( 'root_files/RecoFixThreadedSTACK_Sample'+sample+'_year'+year+'_pt'+str(ptcut)+highptcutstr+extrapolstr+'.root', 'RECREATE')
+savehistos = Histograms.SpawnHistograms(binningSet)
 
 
-savehistos['RecoFixedExtrapolElePt'] = HistInfo(hname = 'RecoFixedExtrapolElePt', sample = histext, binning = ptBinning, binopt = 'var', histclass = ROOT.TH1F).make_hist()
-savehistos['RecoFixedExtrapolEleEta'] = HistInfo(hname = 'RecoFixedExtrapolEleEta', sample = histext, binning = [30, -3, 3], histclass = ROOT.TH1F).make_hist()
-savehistos['RecoFixedExtrapolElePhi'] = HistInfo(hname = 'RecoFixedExtrapolElePhi', sample = histext, binning = [30, -4, 4], histclass = ROOT.TH1F).make_hist()
-savehistos['RecoFixedExtrapolEleVtxx'] = HistInfo(hname = 'RecoFixedExtrapolEleVtxx', sample = histext, binning = [30, -3, 3], histclass = ROOT.TH1F).make_hist()
-savehistos['RecoFixedExtrapolEleVtxy'] = HistInfo(hname = 'RecoFixedExtrapolEleVtxy', sample = histext, binning = [30, -3, 3], histclass = ROOT.TH1F).make_hist()
-savehistos['RecoFixedExtrapolEleVtxz'] = HistInfo(hname = 'RecoFixedExtrapolEleVtxz', sample = histext, binning = [30, -3, 3], histclass = ROOT.TH1F).make_hist()
-savehistos['RecoFixedExtrapolEleDxy'] = HistInfo(hname = 'RecoFixedExtrapolEleDxy', sample = histext, binning = [40, -6, 6], histclass = ROOT.TH1F).make_hist()
-savehistos['RecoFixedExtrapolEleDz'] = HistInfo(hname = 'RecoFixedExtrapolEleDz', sample = histext, binning = [40, -6, 6], histclass = ROOT.TH1F).make_hist()
-savehistos['RecoFixedExtrapolEleDxyAbs'] = HistInfo(hname = 'RecoFixedExtrapolEleDxyAbs', sample = histext, binning = [40, 0, 15], histclass = ROOT.TH1F).make_hist()
-savehistos['RecoFixedExtrapolEleDzAbs'] = HistInfo(hname = 'RecoFixedExtrapolEleDzAbs', sample = histext, binning = [40, 0, 15], histclass = ROOT.TH1F).make_hist()
-
-
-savehistos['TrueElePtDxy2D'] = ROOT.TH2F('TrueElePtDxy2D_','TrueElePtDxy2D', len(ptBinning) -1, np.array(ptBinning), 40,0,15)
-savehistos['RecoFixedExtrapolPtDxy2D'] = ROOT.TH2F('RecoFixedExtrapolPtDxy2D_','RecoFixedExtrapolPtDxy2D', len(ptBinning) -1, np.array(ptBinning), 40,0,15)
-savehistos['RecoFixedPtDxy2D'] = ROOT.TH2F('RecoFixedPtDxy2D_','RecoFixedPtDxy2D', len(ptBinning) -1, np.array(ptBinning), 40,0,15)
-
-savehistos['TruePhotonPt'] = HistInfo(hname = 'TruePhotonPt', sample = histext, binning = ptBinning, binopt = 'var', histclass = ROOT.TH1F).make_hist()
-savehistos['TruePhotonEta'] = HistInfo(hname = 'TruePhotonEta', sample = histext, binning = [30, -3, 3], histclass = ROOT.TH1F).make_hist()
-savehistos['TruePhotonPhi'] = HistInfo(hname = 'TruePhotonPhi', sample = histext, binning = [30, -4, 4], histclass = ROOT.TH1F).make_hist()
-savehistos['TruePhotonVtxx'] = HistInfo(hname = 'TruePhotonVtxx', sample = histext, binning = [30, -3, 3], histclass = ROOT.TH1F).make_hist()
-savehistos['TruePhotonVtxy'] = HistInfo(hname = 'TruePhotonVtxy', sample = histext, binning = [30, -3, 3], histclass = ROOT.TH1F).make_hist()
-savehistos['TruePhotonVtxz'] = HistInfo(hname = 'TruePhotonVtxz', sample = histext, binning = [30, -3, 3], histclass = ROOT.TH1F).make_hist()
-savehistos['TruePhotonDxy'] = HistInfo(hname = 'TruePhotonDxy', sample = histext, binning = [40, -6, 6], histclass = ROOT.TH1F).make_hist()
-savehistos['TruePhotonDz'] = HistInfo(hname = 'TruePhotonDz', sample = histext, binning = [40, -6, 6], histclass = ROOT.TH1F).make_hist()
-savehistos['TruePhotonDxyAbs'] = HistInfo(hname = 'TruePhotonDxyAbs', sample = histext, binning = [40, 0, 15], histclass = ROOT.TH1F).make_hist()
-savehistos['TruePhotonDzAbs'] = HistInfo(hname = 'TruePhotonDzAbs', sample = histext, binning = [40, 0, 15], histclass = ROOT.TH1F).make_hist()
-
-savehistos['RecoPhotonPt'] = HistInfo(hname = 'RecoPhotonPt', sample = histext, binning = ptBinning, binopt = 'var', histclass = ROOT.TH1F).make_hist()
-savehistos['RecoPhotonEta'] = HistInfo(hname = 'RecoPhotonEta', sample = histext, binning = [30, -3, 3], histclass = ROOT.TH1F).make_hist()
-savehistos['RecoPhotonPhi'] = HistInfo(hname = 'RecoPhotonPhi', sample = histext, binning = [30, -4, 4], histclass = ROOT.TH1F).make_hist()
-savehistos['RecoPhotonVtxx'] = HistInfo(hname = 'RecoPhotonVtxx', sample = histext, binning = [30, -3, 3], histclass = ROOT.TH1F).make_hist()
-savehistos['RecoPhotonVtxy'] = HistInfo(hname = 'RecoPhotonVtxy', sample = histext, binning = [30, -3, 3], histclass = ROOT.TH1F).make_hist()
-savehistos['RecoPhotonVtxz'] = HistInfo(hname = 'RecoPhotonVtxz', sample = histext, binning = [30, -3, 3], histclass = ROOT.TH1F).make_hist()
-savehistos['RecoPhotonDxy'] = HistInfo(hname = 'RecoPhotonDxy', sample = histext, binning = [40, -6, 6], histclass = ROOT.TH1F).make_hist()
-savehistos['RecoPhotonDz'] = HistInfo(hname = 'RecoPhotonDz', sample = histext, binning = [40, -6, 6], histclass = ROOT.TH1F).make_hist()
-savehistos['RecoPhotonDxyAbs'] = HistInfo(hname = 'RecoPhotonDxyAbs', sample = histext, binning = [40, 0, 15], histclass = ROOT.TH1F).make_hist()
-savehistos['RecoPhotonDzAbs'] = HistInfo(hname = 'RecoPhotonDzAbs', sample = histext, binning = [40, 0, 15], histclass = ROOT.TH1F).make_hist()
-
-
-savehistos['RecoPhotonPlusIsoTrackPt'] = HistInfo(hname = 'RecoPhotonPlusIsoTrackPt', sample = histext, binning = ptBinning, binopt = 'var', histclass = ROOT.TH1F).make_hist()
-savehistos['RecoPhotonPlusIsoTrackEta'] = HistInfo(hname = 'RecoPhotonPlusIsoTrackEta', sample = histext, binning = [30, -3, 3], histclass = ROOT.TH1F).make_hist()
-savehistos['RecoPhotonPlusIsoTrackPhi'] = HistInfo(hname = 'RecoPhotonPlusIsoTrackPhi', sample = histext, binning = [30, -4, 4], histclass = ROOT.TH1F).make_hist()
-savehistos['RecoPhotonPlusIsoTrackDxyAbs'] = HistInfo(hname = 'RecoPhotonPlusIsoTrackDxyAbs', sample = histext, binning = [40, 0, 15], histclass = ROOT.TH1F).make_hist()
-savehistos['RecoPhotonPlusIsoTrackDzAbs'] = HistInfo(hname = 'RecoPhotonPlusIsoTrackDzAbs', sample = histext, binning = [40, 0, 15], histclass = ROOT.TH1F).make_hist()
-
-savehistos['dRControlPlot2D'] = HistInfo(hname = 'dRControlPlot2D', sample = histext, binning = [[40, 0, 2],[40, 0, 2]], histclass = ROOT.TH2F).make_hist2D()
-
-savehistos['TrueBackgroundPt'] = HistInfo(hname = 'TrueBackgroundPt', sample = histext, binning = ptBinning, binopt = 'var', histclass = ROOT.TH1F).make_hist()
-savehistos['TrueBackgroundEta'] = HistInfo(hname = 'TrueBackgroundEta', sample = histext, binning = [30, -3, 3], histclass = ROOT.TH1F).make_hist()
-savehistos['TrueBackgroundPhi'] = HistInfo(hname = 'TrueBackgroundPhi', sample = histext, binning = [30, -4, 4], histclass = ROOT.TH1F).make_hist()
-savehistos['TrueBackgroundDxyAbs'] = HistInfo(hname = 'TrueBackgroundDxyAbs', sample = histext, binning = [40, 0, 15], histclass = ROOT.TH1F).make_hist()
-savehistos['TrueBackgroundDzAbs'] = HistInfo(hname = 'TrueBackgroundDzAbs', sample = histext, binning = [40, 0, 15], histclass = ROOT.TH1F).make_hist()
-
-savehistos['RejectBackgroundPt'] = HistInfo(hname = 'RejectBackgroundPt', sample = histext, binning = ptBinning, binopt = 'var', histclass = ROOT.TH1F).make_hist()
-savehistos['RejectBackgroundEta'] = HistInfo(hname = 'RejectBackgroundEta', sample = histext, binning = [30, -3, 3], histclass = ROOT.TH1F).make_hist()
-savehistos['RejectBackgroundPhi'] = HistInfo(hname = 'RejectBackgroundPhi', sample = histext, binning = [30, -4, 4], histclass = ROOT.TH1F).make_hist()
-savehistos['RejectBackgroundDxyAbs'] = HistInfo(hname = 'RejectBackgroundDxyAbs', sample = histext, binning = [40, 0, 15], histclass = ROOT.TH1F).make_hist()
-savehistos['RejectBackgroundDzAbs'] = HistInfo(hname = 'RejectBackgroundDzAbs', sample = histext, binning = [40, 0, 15], histclass = ROOT.TH1F).make_hist()
-
-savehistos['RejectBackgroundRecoFixPt'] = HistInfo(hname = 'RejectBackgroundRecoFixPt', sample = histext, binning = ptBinning, binopt = 'var', histclass = ROOT.TH1F).make_hist()
-savehistos['RejectBackgroundRecoFixEta'] = HistInfo(hname = 'RejectBackgroundRecoFixEta', sample = histext, binning = [30, -3, 3], histclass = ROOT.TH1F).make_hist()
-savehistos['RejectBackgroundRecoFixPhi'] = HistInfo(hname = 'RejectBackgroundRecoFixPhi', sample = histext, binning = [30, -4, 4], histclass = ROOT.TH1F).make_hist()
-savehistos['RejectBackgroundRecoFixDxyAbs'] = HistInfo(hname = 'RejectBackgroundRecoFixDxyAbs', sample = histext, binning = [40, 0, 15], histclass = ROOT.TH1F).make_hist()
-savehistos['RejectBackgroundRecoFixDzAbs'] = HistInfo(hname = 'RejectBackgroundRecoFixDzAbs', sample = histext, binning = [40, 0, 15], histclass = ROOT.TH1F).make_hist()
-
-
-savehistos['AllTruePhotonPt'] = HistInfo(hname = 'AllTruePhotonPt', sample = histext, binning = ptBinning, binopt = 'var', histclass = ROOT.TH1F).make_hist()
-savehistos['AllRecoPhotonPt'] = HistInfo(hname = 'AllRecoPhotonPt', sample = histext, binning = ptBinning, binopt = 'var', histclass = ROOT.TH1F).make_hist()
 for threadID in range(Nthreads):
     savedfiles = ROOT.TFile.Open('root_files/RecoFixThreaded_Sample'+sample+'_Thread-'+str(threadID)+'.root')
 
     for key in savehistos.keys():
+        #print "Trying for key: "+str(key)
         savehistos[key].Add( savedfiles.Get( key+'_' ))
 
 
 print("Saving stacked root file...")
 # Save endresult:
-# FIXME: DONT SAVE
 hfile.Write()
+
+
+print("Removing temporary files...")
+for i in range(Nthreads):
+    os.remove('root_files/RecoFixThreaded_Sample'+sample+'_Thread-'+str(i)+'.root')
+
+print("All finished! Sample: "+sample+", ptcut: "+str(ptcut)+((", ptcutHigh: "+str(ptcutHigh)) if options.ptcutHigh != -1 else ""))
