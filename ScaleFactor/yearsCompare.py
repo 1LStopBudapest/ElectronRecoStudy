@@ -183,6 +183,62 @@ def main():
 
 
 
+    makeEfficiencyPlot("SF/z_all_years_cb-jmcfr.png", 
+                        z16pre["shared_data_integrals_cb"],
+                        z16pre["shared_data_integral_cb_sigmas"],
+                        z16pre["shared_data_integral_cb_sigmas_bksyst"],
+                        z16pre["shared_data_integral_cb_sigmas_rangesyst"],
+                        z16pre["shared_mc_integrals_cb"],
+                        z16pre["shared_mc_integral_cb_sigmas"],
+                        z16pre["shared_mc_integral_cb_sigmas_bksyst"],
+                        z16pre["shared_mc_integral_cb_sigmas_rangesyst"],
+                        z16pre["ptbins_center_fit"],
+                        z16pre["binw_fit"],
+
+                        z16post["shared_data_integrals_cb"],
+                        z16post["shared_data_integral_cb_sigmas"],
+                        z16post["shared_data_integral_cb_sigmas_bksyst"],
+                        z16post["shared_data_integral_cb_sigmas_rangesyst"],
+                        z16post["shared_mc_integrals_cb"],
+                        z16post["shared_mc_integral_cb_sigmas"],
+                        z16post["shared_mc_integral_cb_sigmas_bksyst"],
+                        z16post["shared_mc_integral_cb_sigmas_rangesyst"],
+                        z16post["ptbins_center_fit"],
+                        z16post["binw_fit"],
+
+                        z17["shared_data_integrals_cb"],
+                        z17["shared_data_integral_cb_sigmas"],
+                        z17["shared_data_integral_cb_sigmas_bksyst"],
+                        z17["shared_data_integral_cb_sigmas_rangesyst"],
+                        z17["shared_mc_integrals_cb"],
+                        z17["shared_mc_integral_cb_sigmas"],
+                        z17["shared_mc_integral_cb_sigmas_bksyst"],
+                        z17["shared_mc_integral_cb_sigmas_rangesyst"],
+                        z17["ptbins_center_fit"],
+                        z17["binw_fit"],
+
+                        z18["shared_data_integrals_cb"],
+                        z18["shared_data_integral_cb_sigmas"],
+                        z18["shared_data_integral_cb_sigmas_bksyst"],
+                        z18["shared_data_integral_cb_sigmas_rangesyst"],
+                        z18["shared_mc_integrals_cb"],
+                        z18["shared_mc_integral_cb_sigmas"],
+                        z18["shared_mc_integral_cb_sigmas_bksyst"],
+                        z18["shared_mc_integral_cb_sigmas_rangesyst"],
+                        z18["ptbins_center_fit"],
+                        z18["binw_fit"],
+
+                        j18["shared_data_integrals_cb"],
+                        j18["shared_data_integral_cb_sigmas"],
+                        j18["shared_data_integral_cb_sigmas_bksyst"],
+                        j18["shared_data_integral_cb_sigmas_rangesyst"],
+                        j18["shared_mc_raw_fullrangeintegrals"],  #!
+                        j18["shared_mc_raw_fullrangeintegral_sigmas"],  #!
+                        [0]*len(j18["shared_mc_raw_fullrangeintegrals"]),  #!
+                        [0]*len(j18["shared_mc_raw_fullrangeintegrals"]),  #!
+                        j18["ptbins_center_fit"],
+                        j18["binw_fit"]
+                        )
 
 
 def get_efficiency_error(P, F, DP, DF):

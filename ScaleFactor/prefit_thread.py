@@ -24,6 +24,7 @@ def get_parser():
     argParser = argparse.ArgumentParser(description = "Argument parser")
     argParser.add_argument('config_file',help='config_file')
     argParser.add_argument('--threads', nargs='?', const=1, type=int)
+    argParser.add_argument('--bins', nargs='?', const=1, type=str)
     return argParser
 
 
@@ -347,7 +348,7 @@ def subtract_background(x, y, y_pm, chevpars, bGetError = False, chev_std = []):
         return y_sub, y_pm_sub
     return y_sub
 
-def get_bksub_integral(x, y, y_pm, chevpars, chev_std, int_range, repeats):
+def get_bksub_integral(x, y, y_pm, chevpars, chev_std, int_range, fit_range, repeats, resonance):
 
     #print chevpars
     #print chev_std
@@ -426,11 +427,42 @@ def get_bksub_integral(x, y, y_pm, chevpars, chev_std, int_range, repeats):
         if 0.5 * integral_w < integral_w_i < 2 * integral_w:
             integrals_for_std.append( sum(ysub_i) )
 
+
+    ## BKSYST ##
     # calculate integral with expecting a linear background
-    x1 = int_range[0]
-    x2 = int_range[1]
-    y1 = Chev.chebval(x1,chevpars )
-    y2 = Chev.chebval(x2,chevpars )
+    # a) try to find local minimum to the left of the first integral range
+    locmin_i = 0
+    iIsFirstBin = 0
+    for i in range(len(x)):
+        if x[i] < fit_range[0]: continue
+        if x[i] >= int_range[0]: break
+
+        if iIsFirstBin == 0:
+            locmin_i = i
+            iIsFirstBin += 1
+            continue
+
+        if y[i] < y[locmin_i]:
+            locmin_i = i
+            iIsFirstBin += 1
+
+    if iIsFirstBin > 1 and resonance == "Z":    # FIXME also test for higher end?
+        x1 = x[locmin_i]
+        x2 = int_range[1]
+        y1 = y[locmin_i]
+        
+        for i in range(len(x)):
+            if x[i] >= int_range[1]:
+                y2 = y[i]
+                break
+
+    else:
+        # b) no local minimum, use previous version
+        x1 = int_range[0]
+        x2 = int_range[1]
+        y1 = Chev.chebval(x1,chevpars )
+        y2 = Chev.chebval(x2,chevpars )
+
     a = (y2-y1)/(x2-x1)
     b = y1 - a*x1
 
@@ -439,10 +471,11 @@ def get_bksub_integral(x, y, y_pm, chevpars, chev_std, int_range, repeats):
         trapstep = y_inrange[i] - (a*x_inrange[i]+b)
         integral_linbk_w += trapstep if trapstep > 0 else 0
 
+    linbk_params = [[x1, x2], [y1, y2]]
 
     #print integrals_for_std
     #print integral_w, str(abs(np.sqrt(np.std(integrals_for_std)**2 + integral_w))/integral_w*100)+"%"
-    return integral_w, np.sqrt(np.std(integrals_for_std)**2 + integral_w), integral_linbk_w, integral_rangesyst_std
+    return integral_w, np.sqrt(np.std(integrals_for_std)**2 + integral_w), integral_linbk_w, linbk_params, integral_rangesyst_std
 
 
 
@@ -647,6 +680,32 @@ def getIntegralErrorWithMCMethod(function, p0, p0err, binwidth, config_file, ind
 
 
 
+def getIntegralFuncErrorFromLinBK(chevparams, binwidth, config_file, linbk_params):
+
+    # integral of underlying chev
+    master_integral_range = [75,105] if config_file['resonance'] == "Z" else [2.7,3.5]
+    xrange_min = master_integral_range[0]
+    xrange_max = master_integral_range[1]
+
+    def integrand(x):
+        return Chev.chebval(x,chevparams)
+    integral = quad(integrand, xrange_min, xrange_max)
+    integral_w = integral[0] / binwidth
+
+    #print("Integral under chev: "+str(integral_w))
+
+    # integral with lin
+    x1 = linbk_params[0][0]
+    x2 = linbk_params[0][1]
+    y1 = linbk_params[1][0]
+    y2 = linbk_params[1][1]
+
+    integral_linbk = 0.5 * (y1 + y2) * abs(x2 - x1)  / binwidth
+    #print("Integral under lin: "+str(integral_linbk))
+
+
+    return abs(integral_w - integral_linbk)
+
 
 
 def fit_psip(index, x_in, y_in, y_pm_in, config_file, sigma, Delta_sigma):
@@ -692,11 +751,15 @@ def fit_psip(index, x_in, y_in, y_pm_in, config_file, sigma, Delta_sigma):
 
 
 
-def makePlot(output_dir, config_file, binname, index, isData, x_axis, x_axis_pm, y_axis, y_axis_pm, x_axis_black, y_axis_black, doBkg, chevx, chevparams, chevstats, hist_integral, Delta_hist_integral, linbksub_integral, integral_range_std, gauss_settings, cb_settings, psip_settings):
+def makePlot(output_dir, config_file, binname, index, isData, x_axis, x_axis_pm, y_axis, y_axis_pm, x_axis_black, y_axis_black, doBkg, chevx, chevparams, chevstats, hist_integral, Delta_hist_integral, hist_fullrangeintegral, Delta_hist_fullrangeintegral, linbksub_integral, linbk_params, integral_range_std, gauss_settings, cb_settings, psip_settings):
     
     plt.close()
 
+    master_integral_range = [75,105] if config_file['resonance'] == "Z" else [2.7,3.5]
+
     chevorder = config_file["chevorder"]
+    if index in config_file['chevorder_in_bin']:
+        chevorder = config_file['chevorder_in_bin'][index]
 
     if isData and index in config_file['data_override_plots_xrange']:
         lower_x = config_file['data_override_plots_xrange'][index][0]
@@ -733,20 +796,30 @@ def makePlot(output_dir, config_file, binname, index, isData, x_axis, x_axis_pm,
     fig = plt.figure(42,figsize=(15, 10))
     ax = fig.add_subplot(111)
 
-    rawint_text = ("BKsub integral/bw = " if isData or doBkg else "Raw integral/bw = ")+"{:.1f}".format(hist_integral)+u"\u00B1"+("{:.1f}".format(100*Delta_hist_integral / hist_integral) if hist_integral else "?")+"%"
-    if linbksub_integral:
-        integral_bksyst_Delta = linbksub_integral - hist_integral
-        rawint_text = rawint_text + u"\u00B1" +("{:.1f}".format(100*integral_bksyst_Delta / hist_integral) if hist_integral else "?")+"%"
-        rawint_text = rawint_text + u"\u00B1" +("{:.1f}".format(100*integral_range_std / hist_integral) if hist_integral else "?")+"%"
+    rawint_text = ("BKsub integral/bw = " if isData or doBkg else "Raw integral/bw = ")+"\n{:.1f}".format(hist_integral)+u"\u00B1"+("{:.1f}".format(100*Delta_hist_integral / hist_integral) if hist_integral else "?")+"%"+r"$^{\mathrm{st}}$"
 
+
+    if linbksub_integral:
+        integral_bksyst_Delta = abs(linbksub_integral - hist_integral)
+        rawint_text = rawint_text + u"\u00B1" +("{:.1f}".format(100*integral_bksyst_Delta / hist_integral) if hist_integral else "?")+"%"+r"$^{\mathrm{bk}}$"
+    rawint_text = rawint_text + u"\u00B1" +("{:.1f}".format(100*integral_range_std / hist_integral) if hist_integral else "?")+"%"+r"$^{\mathrm{r}}$"
+
+    if not (isData or doBkg) and hist_fullrangeintegral:
+        rawint_text += "\nFull range raw integral/bw = \n"+"{:.1f}".format(hist_fullrangeintegral)+u"\u00B1"+("{:.1f}".format(100*Delta_hist_fullrangeintegral / hist_fullrangeintegral) if hist_fullrangeintegral else "?")+"%"+r"$^{\mathrm{st}}$"
 
     ax.plot(x_axis,y_axis, "sb", label = rawint_text)
     ax.errorbar(x_axis, y_axis, yerr=y_axis_pm, xerr = x_axis_pm, capsize=3, fmt=".", ecolor = "black")
     ax.plot(x_axis_black, y_axis_black, "x", color="black")
-    ax.set_xlabel("m [GeV]")
-    ax.set_ylabel("Events")
-    ax.xaxis.set_label_coords(.9, -.1)
-    ax.set_title(binname)
+    ax.set_xlabel("m [GeV]", fontsize=18, labelpad=3)
+    ax.set_ylabel("Events", fontsize=18)
+    ax.xaxis.set_label_coords(0.9, -0.05)
+
+
+    passing_or_failing = binname[-4:]
+    binname = binname[:-4]
+    binname += "WP: "+config_file['workingpoint']
+
+    ax.set_title(binname, fontsize = 20)
     goodlim_y = ax.get_ylim()
 
     if isData and index in config_file['data_override_plots_xrange']:
@@ -768,7 +841,13 @@ def makePlot(output_dir, config_file, binname, index, isData, x_axis, x_axis_pm,
             chi2 = "?"
         else:
             chi2 = "{:.1f}".format(chevstats[0][0] / (len(chevx) - (chevorder + 1)))
-        ax.plot(x,Chev.chebval(x,chevparams),label=str(chevorder)+r"th order chev, $\chi^{2}$/dof="+chi2)
+        ax.plot(x,Chev.chebval(x,chevparams),label=str(chevorder)+r"th order chev") #, $\chi^{2}$/dof="+chi2)
+
+
+        # Draw the line BK estimate
+        if (not index in config_file["data_skip_bksyst_estimation"] and isData) or (not index in config_file["mc_skip_bksyst_estimation"] and not isData):
+            
+            ax.plot(linbk_params[0], linbk_params[1], color="gray", ls ="--")
 
 
     if gauss_settings['bDraw']:
@@ -809,15 +888,16 @@ def makePlot(output_dir, config_file, binname, index, isData, x_axis, x_axis_pm,
         total_integral = cb_settings["integral"]
         total_integral_Delta = cb_settings["Delta_integral"]
 
-        fulltext = text + ", integral/bw = "+"{:.1f}".format(total_integral)+u"\u00B1"+("{:.1f}".format(100*total_integral_Delta / total_integral) if total_integral else "?")+"%"  
+        fulltext = text + ", integral/bw = "+"\n{:.1f}".format(total_integral)+u"\u00B1"+("{:.1f}".format(100*total_integral_Delta / total_integral) if total_integral else "?")+"%"+r"$^{\mathrm{st}}$"
         
-        if doBkg:
+        if doBkg and cb_settings["bksyst_Delta_integral"]:
             total_integral_bksyst_Delta = abs(cb_settings["bksyst_Delta_integral"])
-            fulltext = fulltext + u"\u00B1" +("{:.1f}".format(100*total_integral_bksyst_Delta / total_integral) if total_integral else "?")+"%"
+            fulltext = fulltext + u"\u00B1" +("{:.1f}".format(100*total_integral_bksyst_Delta / total_integral) if total_integral else "?")+"%"+r"$^{\mathrm{bk}}$"
 
-        fulltext = fulltext + u"\u00B1"+("{:.1f}".format(100* cb_settings["integral_rangesyst_std"] / total_integral) if total_integral else "?")+"%"  
+        fulltext = fulltext + u"\u00B1"+("{:.1f}".format(100* cb_settings["integral_rangesyst_std"] / total_integral) if total_integral else "?")+"%"+r"$^{\mathrm{r}}$"
 
         ax.plot(x,cb_y,color="crimson",label=fulltext)
+
         
 
 
@@ -830,11 +910,16 @@ def makePlot(output_dir, config_file, binname, index, isData, x_axis, x_axis_pm,
 
 
     ax.set_ylim(goodlim_y)
-    ax.legend(loc='best', title=("Data" if isData else "MC")+", "+config_file['workingpoint'])
+    leg = ax.legend(loc='best', title=("Data" if isData else "MC")+", "+passing_or_failing, fontsize=17)
+    leg.get_title().set_fontsize(17)
+    leg.get_frame().set_alpha(0.42)
+
     ax.grid(linestyle = "--")
 
+
+
     vlinecolor = 'gray' if index in config_file[("MC_" if not isData else "")+'dualfit_bounds_cb'] else 'k'
-    master_integral_range = [75,105] if config_file['resonance'] == "Z" else [2.7,3.5]
+    
     #ax.vlines(config_file[("MC_" if not isData else "")+"raw_integral_bounds"][index][0], goodlim_y[0],goodlim_y[1], color=vlinecolor)
     #ax.vlines(config_file[("MC_" if not isData else "")+"raw_integral_bounds"][index][1], goodlim_y[0],goodlim_y[1], color=vlinecolor)
     ax.vlines(master_integral_range[0], goodlim_y[0],goodlim_y[1], color=vlinecolor)
@@ -842,10 +927,12 @@ def makePlot(output_dir, config_file, binname, index, isData, x_axis, x_axis_pm,
 
 
 
+
+
     if doBkg:
-        if not os.path.exists(output_dir+"/fits/chev"+str(chevorder)):
-            os.makedirs(output_dir+"/fits/chev"+str(chevorder))
-        plt.savefig(output_dir+"/fits/chev"+str(chevorder)+"/figure"+str(index)+".png")
+        if not os.path.exists(output_dir+"/fits/chev"+str(config_file["chevorder"])):
+            os.makedirs(output_dir+"/fits/chev"+str(config_file["chevorder"]))
+        plt.savefig(output_dir+"/fits/chev"+str(config_file["chevorder"])+"/figure"+str(index)+".png")
     else:
         if not os.path.exists(output_dir+"/fits/"):
             os.makedirs(output_dir+"/fits/")
@@ -899,18 +986,22 @@ def makeCommonDataMCFitPlot(output_dir, config_file, binname, index, data_plotin
     goodlim_y = ax.get_ylim()
 
 
+    chevorder = config_file["chevorder"]
+    if index in config_file['chevorder_in_bin']:
+        chevorder = config_file['chevorder_in_bin'][index]
+
 
     if len (data_plotinfo["chevstats"][0]) == 0:
         chi2 = "?"
     else:
-        chi2 = "{:.1f}".format(data_plotinfo["chevstats"][0][0] / (len(data_plotinfo["chevx"]) - (config_file["chevorder"] + 1)))
-    ax.plot(data_x,Chev.chebval(data_x,data_plotinfo["chevparams"]),label=str(config_file["chevorder"])+r"th order chev, data, $\chi^{2}$/dof="+chi2)
+        chi2 = "{:.1f}".format(data_plotinfo["chevstats"][0][0] / (len(data_plotinfo["chevx"]) - (chevorder + 1)))
+    ax.plot(data_x,Chev.chebval(data_x,data_plotinfo["chevparams"]),label=str(chevorder)+r"th order chev, data, $\chi^{2}$/dof="+chi2)
     if mc_doBkg:
         if len (mc_plotinfo["chevstats"][0]) == 0:
             chi2 = "?"
         else:
-            chi2 = "{:.1f}".format(mc_plotinfo["chevstats"][0][0] / (len(mc_plotinfo["chevx"]) - (config_file["chevorder"] + 1)))
-        ax.plot(mc_x,Chev.chebval(mc_x,mc_plotinfo["chevparams"]),label=str(config_file["chevorder"])+r"th order chev, MC, $\chi^{2}$/dof="+chi2)
+            chi2 = "{:.1f}".format(mc_plotinfo["chevstats"][0][0] / (len(mc_plotinfo["chevx"]) - (chevorder + 1)))
+        ax.plot(mc_x,Chev.chebval(mc_x,mc_plotinfo["chevparams"]),label=str(chevorder)+r"th order chev, MC, $\chi^{2}$/dof="+chi2)
 
 
     if data_plotinfo["gauss_settings"]['bDraw']:
@@ -1159,13 +1250,16 @@ def makeCommonSubtractedDataMCFitPlot(output_dir, config_file, binname, index, d
 
 
 
-def TnPEfficiency(mutex, shared_data_raw_integrals, shared_data_raw_integral_sigmas, shared_data_raw_integral_sigmas_rangesyst, shared_data_raw_integral_sigmas_bksyst, shared_data_gauss_integrals, shared_data_gauss_integral_sigmas, shared_data_gauss_integral_sigmas_rangesyst, shared_data_gauss_integral_sigmas_bksyst, shared_data_integrals_cb, shared_data_integral_cb_sigmas, shared_data_integral_cb_sigmas_rangesyst, shared_data_integral_cb_sigmas_bksyst, shared_mc_raw_integrals, shared_mc_raw_integral_sigmas, shared_mc_raw_integral_sigmas_rangesyst, shared_mc_raw_integral_sigmas_bksyst, shared_mc_gauss_integrals, shared_mc_gauss_integral_sigmas, shared_mc_gauss_integral_sigmas_rangesyst, shared_mc_gauss_integral_sigmas_bksyst, shared_mc_integrals_cb, shared_mc_integral_cb_sigmas, shared_mc_integral_cb_sigmas_rangesyst, shared_mc_integral_cb_sigmas_bksyst, shared_mc_alt_raw_integrals, shared_mc_alt_raw_integral_sigmas, shared_mc_alt_raw_integral_sigmas_rangesyst, shared_mc_alt_raw_integral_sigmas_bksyst, shared_mc_alt_gauss_integrals, shared_mc_alt_gauss_integral_sigmas, shared_mc_alt_gauss_integral_sigmas_rangesyst, shared_mc_alt_gauss_integral_sigmas_bksyst, shared_mc_alt_integrals_cb, shared_mc_alt_integral_cb_sigmas, shared_mc_alt_integral_cb_sigmas_rangesyst, shared_mc_alt_integral_cb_sigmas_bksyst,
-                       datafile, mcfile, mcfile_alt, bins, binnames, indexlist, binindex_range_to_fit, workdir, config_file, skipped_lowpt_bins):
+def TnPEfficiency(mutex, shared_data_raw_integrals, shared_data_raw_integral_sigmas, shared_data_raw_integral_sigmas_rangesyst, shared_data_raw_integral_sigmas_bksyst, shared_data_gauss_integrals, shared_data_gauss_integral_sigmas, shared_data_gauss_integral_sigmas_rangesyst, shared_data_gauss_integral_sigmas_bksyst, shared_data_integrals_cb, shared_data_integral_cb_sigmas, shared_data_integral_cb_sigmas_rangesyst, shared_data_integral_cb_sigmas_bksyst, shared_mc_raw_integrals, shared_mc_raw_integral_sigmas, shared_mc_raw_integral_sigmas_rangesyst, shared_mc_raw_integral_sigmas_bksyst, shared_mc_raw_fullrangeintegrals, shared_mc_raw_fullrangeintegral_sigmas, shared_mc_gauss_integrals, shared_mc_gauss_integral_sigmas, shared_mc_gauss_integral_sigmas_rangesyst, shared_mc_gauss_integral_sigmas_bksyst, shared_mc_integrals_cb, shared_mc_integral_cb_sigmas, shared_mc_integral_cb_sigmas_rangesyst, shared_mc_integral_cb_sigmas_bksyst, shared_mc_alt_raw_integrals, shared_mc_alt_raw_integral_sigmas, shared_mc_alt_raw_integral_sigmas_rangesyst, shared_mc_alt_raw_integral_sigmas_bksyst, shared_mc_alt_raw_fullrangeintegrals, shared_mc_alt_raw_fullrangeintegral_sigmas, shared_mc_alt_gauss_integrals, shared_mc_alt_gauss_integral_sigmas, shared_mc_alt_gauss_integral_sigmas_rangesyst, shared_mc_alt_gauss_integral_sigmas_bksyst, shared_mc_alt_integrals_cb, shared_mc_alt_integral_cb_sigmas, shared_mc_alt_integral_cb_sigmas_rangesyst, shared_mc_alt_integral_cb_sigmas_bksyst,
+                       datafile, mcfile, mcfile_alt, bins, binnames, indexlist, binindex_range_to_fit, fitted_figures, workdir, config_file, skipped_lowpt_bins):
 
 
     first_one = True
     for index in indexlist:
         fit_in_this_bin = binindex_range_to_fit[0] <= index < binindex_range_to_fit[1]
+
+        if fitted_figures != "all":
+            fit_in_this_bin = index in fitted_figures
 
         use_fixed_sigma_data = False
         use_fixed_sigma_data_Delta = False
@@ -1222,6 +1316,9 @@ def TnPEfficiency(mutex, shared_data_raw_integrals, shared_data_raw_integral_sig
                 shared_mc_raw_integral_sigmas_bksyst[index - 4*skipped_lowpt_bins] = mc_plotinfo["linkb_hist_integral_Delta"]
                 shared_mc_raw_integral_sigmas_rangesyst[index - 4*skipped_lowpt_bins] = mc_plotinfo["hist_integral_rangesyst_std"]
 
+                shared_mc_raw_fullrangeintegrals[index - 4*skipped_lowpt_bins] = mc_plotinfo["hist_fullrangeintegral"]
+                shared_mc_raw_fullrangeintegral_sigmas[index - 4*skipped_lowpt_bins] = mc_plotinfo["Delta_hist_fullrangeintegral"]
+
                 shared_mc_gauss_integrals[index - 4*skipped_lowpt_bins] = mc_gauss_integral
                 shared_mc_gauss_integral_sigmas[index - 4*skipped_lowpt_bins] = mc_gauss_integral_sigma
                 shared_mc_gauss_integral_sigmas_bksyst[index - 4*skipped_lowpt_bins] = mc_plotinfo["gauss_settings"]["bksyst_Delta_integral"] if "bksyst_Delta_integral" in mc_plotinfo["gauss_settings"] else 0
@@ -1250,6 +1347,9 @@ def TnPEfficiency(mutex, shared_data_raw_integrals, shared_data_raw_integral_sig
                     shared_mc_alt_raw_integral_sigmas[index - 4*skipped_lowpt_bins] = mc_alt_raw_integral_sigma
                     shared_mc_alt_raw_integral_sigmas_bksyst[index - 4*skipped_lowpt_bins] = mc_alt_plotinfo["linkb_hist_integral_Delta"]
                     shared_mc_alt_raw_integral_sigmas_rangesyst[index - 4*skipped_lowpt_bins] = mc_alt_plotinfo["hist_integral_rangesyst_std"]
+
+                    shared_mc_alt_raw_fullrangeintegrals[index - 4*skipped_lowpt_bins] = mc_plotinfo["hist_fullrangeintegral"]
+                    shared_mc_alt_raw_fullrangeintegral_sigmas[index - 4*skipped_lowpt_bins] = mc_plotinfo["Delta_hist_fullrangeintegral"]
 
                     shared_mc_alt_gauss_integrals[index - 4*skipped_lowpt_bins] = mc_alt_gauss_integral
                     shared_mc_alt_gauss_integral_sigmas[index - 4*skipped_lowpt_bins] = mc_alt_gauss_integral_sigma
@@ -1425,6 +1525,24 @@ def TnPEfficiencyInBin(isData, inputfile_name, workdir, plotdir, bin, binname, i
 
     if isData and index in config_file['data_override_plots_xrange']:
         ax.set_xlim(config_file['data_override_plots_xrange'][index])
+
+        curr_ylim = ax.get_ylim()
+        max_y = 0
+        min_y = 99999
+        for i in range(len(x_axis)):
+            if config_file['data_override_plots_xrange'][index][0] <= x_axis[i]:
+                if y_axis[i] > max_y: 
+                    max_y = y_axis[i]
+                if y_axis[i] < min_y: 
+                    min_y = y_axis[i]
+            if config_file['data_override_plots_xrange'][index][1] < x_axis[i]:
+                break
+
+        if max_y < curr_ylim[1]:
+            ax.set_ylim(curr_ylim[0], max_y)
+            if min_y > curr_ylim[0]:
+                ax.set_ylim(0.95*min_y, max_y*1.05)
+
     else:
         ax.set_xlim(config_file['plots_xrange'])
 
@@ -1443,21 +1561,32 @@ def TnPEfficiencyInBin(isData, inputfile_name, workdir, plotdir, bin, binname, i
         index += 1
         return False, False, False, False, False, False, False, False, False
 
+
+    # determine do fit
+    bDoFit = isData or config_file["fit_MC"]
+
+
+
     print ("Data " if isData else "MC ") + "Fit "+str(index)+", "+binname
-    if doBkg:
+    if doBkg and bDoFit:
         weights = []
         for sigma in chevy_pm:
             weights.append(1/sigma)
 
-        chevparams, chevstats = Chev.chebfit(chevx, chevy, config_file['chevorder'], full=True, w=weights)
+        chevorder = config_file["chevorder"]
+        if index in config_file['chevorder_in_bin']:
+            chevorder = config_file['chevorder_in_bin'][index]
 
-        A = Chev.chebvander(chevx, config_file['chevorder'])
-        dof = len(chevx) - (config_file['chevorder'] + 1)  # degrees of freedom
+        chevparams, chevstats = Chev.chebfit(chevx, chevy, chevorder, full=True, w=weights)
+
+        A = Chev.chebvander(chevx, chevorder)
+        dof = len(chevx) - (chevorder + 1)  # degrees of freedom
         resid_var = chevstats[0][0] / dof
         cov = resid_var * np.linalg.inv(np.dot(A.T, A))
         chev_std_devs = np.sqrt(np.diag(cov))
 
         chevparams_gauss = list(chevparams)
+
 
 
         if config_file["bFitGauss"]:
@@ -1518,6 +1647,8 @@ def TnPEfficiencyInBin(isData, inputfile_name, workdir, plotdir, bin, binname, i
                     peak_slice.append(cb_y_sub[i])
                     peak_pm_slice.append(cb_y_pm_sub[i])
                     peak_x_slice.append(peak_cb_x[i])
+                #else:
+                #    print("Slicing point at "+str(peak_cb_x[i]))
             
             peak_cb_x_forsub = peak_x_slice
             cb_y_sub = peak_slice
@@ -1577,7 +1708,7 @@ def TnPEfficiencyInBin(isData, inputfile_name, workdir, plotdir, bin, binname, i
                 "perr_sig": cb_perr_sig,
                 "integral": cb_integral,
                 "Delta_integral": cb_Delta_integral,
-                "bksyst_Delta_integral": integral_w_linbk - cb_integral,
+                "bksyst_Delta_integral": 0,       # integral_w_linbk - cb_integral, # placeholder!
                 "integral_rangesyst_std": cb_integral_rangesyst_std,
                 "fix_sigma": fix_sigma  
             }
@@ -1610,14 +1741,37 @@ def TnPEfficiencyInBin(isData, inputfile_name, workdir, plotdir, bin, binname, i
             }
 
 
-        bksub_integral, bksub_integral_pm, linbksub_integral, rangesyst_std = get_bksub_integral(x_axis, y_axis, y_axis_pm, chevparams, chev_std_devs, master_integral_range, config_file["integral_error_MCmethod_iterations"])
+        # Note for future me: The raw hist integral and stuff MUST be here after fitting the peak, because it relies on the
+        # chev background, which must come after the dual fitting
+
+        if index in config_file[('MC_' if not isData else '') + 'dualfit_bounds_cb']:
+            fit_range = config_file[('MC_' if not isData else '') + 'dualfit_bounds_cb'][index]
+        else:
+            fit_range = [config_file[('MC_' if not isData else '') + 'background_fit_bounds'][index][0],  config_file[('MC_' if not isData else '') + 'background_fit_bounds'][index][-1]]
+
+
+        bksub_integral, bksub_integral_pm, linbksub_integral, linbk_params, rangesyst_std = get_bksub_integral(x_axis, y_axis, y_axis_pm, chevparams, chev_std_devs, master_integral_range, fit_range, config_file["integral_error_MCmethod_iterations"], config_file["resonance"])
+
+        Delta_funcInt_from_linbk = getIntegralFuncErrorFromLinBK(chevparams, abs(x_axis[1] - x_axis[0]), config_file, linbk_params)
+
+
+        hist_fullrangeintegral, hist_fullrangeintegral_error = False, False
+
+
+        cb_settings["bksyst_Delta_integral"] = Delta_funcInt_from_linbk
 
         if index in config_file["data_skip_bksyst_estimation"]:
-            linbksub_integral = bksub_integral
+            linbksub_integral = False
+            cb_settings["bksyst_Delta_integral"] = False
 
-        makePlot(workdir+plotdir, config_file, binname, index, isData, x_axis, x_axis_pm, y_axis, y_axis_pm, x_axis_black, y_axis_black, doBkg, chevx, chevparams, chevstats, bksub_integral, bksub_integral_pm, linbksub_integral, rangesyst_std, gauss_settings, cb_settings, psip_settings)
+
+
+        makePlot(workdir+plotdir, config_file, binname, index, isData, x_axis, x_axis_pm, y_axis, y_axis_pm, x_axis_black, y_axis_black, doBkg, chevx, chevparams, chevstats, bksub_integral, bksub_integral_pm, 0, 0, linbksub_integral, linbk_params, rangesyst_std, gauss_settings, cb_settings, psip_settings)
+
+
     else:
-        if config_file["bFitGauss"]:
+
+        if config_file["bFitGauss"] and bDoFit:
             try:
                 gauss_popt_sig, gauss_perr_sig, gauss_integral, gauss_Delta_integral, gauss_integral_rangesyst_std = peak_fit("gauss" if not config_file['bUseBWGauss'] else "bwg", peakx, peaky, peaky_pm, config_file, isData, index)
             except Exception as er:
@@ -1639,7 +1793,7 @@ def TnPEfficiencyInBin(isData, inputfile_name, workdir, plotdir, bin, binname, i
             }
 
 
-        if config_file["bFitCrystalball"]:
+        if config_file["bFitCrystalball"] and bDoFit:
 
             try:
                 cb_popt_sig, cb_perr_sig, cb_integral, cb_Delta_integral, cb_integral_rangesyst_std = peak_fit("crystalball", peak_cb_x, peak_cb_y, peak_cb_y_pm, config_file, isData, index, fix_sigma, fix_sigma_Delta)
@@ -1716,6 +1870,10 @@ def TnPEfficiencyInBin(isData, inputfile_name, workdir, plotdir, bin, binname, i
         hist_integral = hist.IntegralAndError(lowbin, highbin, hist_integral_error)
         hist_integral_error = hist_integral_error.value
 
+        hist_fullrangeintegral_error = ctypes.c_double(0)
+        hist_fullrangeintegral = hist.IntegralAndError(1, histxaxis.GetNbins(), hist_fullrangeintegral_error)
+        hist_fullrangeintegral_error = hist_fullrangeintegral_error.value
+
 
         hist_integral_low_error = ctypes.c_double(0)
         hist_integral_low  = hist.IntegralAndError(lowbinSystUp,   highbinSystDown, hist_integral_low_error)
@@ -1723,12 +1881,12 @@ def TnPEfficiencyInBin(isData, inputfile_name, workdir, plotdir, bin, binname, i
 
         hist_integral_rangesyst_std = useBigger(abs(hist_integral - hist_integral_high), abs(hist_integral - hist_integral_low))
 
-        makePlot(workdir+plotdir, config_file, binname, index, isData, x_axis, x_axis_pm, y_axis, y_axis_pm, x_axis_black, y_axis_black, doBkg, False, False, False, hist_integral, hist_integral_error, 0, hist_integral_rangesyst_std, gauss_settings, cb_settings, psip_settings)
+        makePlot(workdir+plotdir, config_file, binname, index, isData, x_axis, x_axis_pm, y_axis, y_axis_pm, x_axis_black, y_axis_black, doBkg, False, False, False, hist_integral, hist_integral_error, hist_fullrangeintegral, hist_fullrangeintegral_error, 0, [], hist_integral_rangesyst_std, gauss_settings, cb_settings, psip_settings)
 
     if doBkg:
         raw_integral = bksub_integral
         raw_integral_sigma = bksub_integral_pm
-        linkb_hist_integral_Delta = linbksub_integral - raw_integral
+        linkb_hist_integral_Delta = abs(linbksub_integral - raw_integral)
         raw_integral_rangesyst_std = rangesyst_std
     else: 
         raw_integral = hist_integral
@@ -1758,6 +1916,8 @@ def TnPEfficiencyInBin(isData, inputfile_name, workdir, plotdir, bin, binname, i
         "chev_std_devs": chev_std_devs if doBkg else False,
         "hist_integral": raw_integral,
         "Delta_hist_integral": raw_integral_sigma,
+        "hist_fullrangeintegral": hist_fullrangeintegral,
+        "Delta_hist_fullrangeintegral": hist_fullrangeintegral_error,
         "linkb_hist_integral_Delta":  linkb_hist_integral_Delta,
         "hist_integral_rangesyst_std": raw_integral_rangesyst_std,
         "gauss_settings": gauss_settings,
@@ -1860,6 +2020,16 @@ def main():
         threads = options.threads
 
 
+    if options.bins is not None:
+        try:
+            fitted_figures = [int(x) for x in options.bins.split(",")]
+        except Exception:
+            print("Insensible bins")
+            quit()
+    else:
+        fitted_figures = "all"
+
+
     # get number of fitted bins
     skipped_lowpt_bins = 0
     num_fitted_pt_bins = 0
@@ -1870,6 +2040,7 @@ def main():
             num_fitted_pt_bins += 1
         else:
             break
+
 
 
     # decide how many bins per thread
@@ -1895,6 +2066,8 @@ def main():
             binindex += 1
             extrafiles -= 1
     
+
+
     def cyclic_index(index, threads):
         while(index >= threads):
             index -= threads
@@ -1908,7 +2081,6 @@ def main():
     for i in range(binindex, len(bins), 1):
         indexlists[cyclic_index(free_worker, threads)].append(i)
         free_worker += 1
-
 
     mutex = multiprocessing.Lock()
     shared_data_raw_integrals = multiprocessing.Array('d',range(num_fitted_pt_bins * 4))
@@ -1927,6 +2099,8 @@ def main():
     shared_mc_raw_integral_sigmas = multiprocessing.Array('d',range(num_fitted_pt_bins * 4))
     shared_mc_raw_integral_sigmas_rangesyst = multiprocessing.Array('d',range(num_fitted_pt_bins * 4))
     shared_mc_raw_integral_sigmas_bksyst = multiprocessing.Array('d',range(num_fitted_pt_bins * 4))
+    shared_mc_raw_fullrangeintegrals = multiprocessing.Array('d',range(num_fitted_pt_bins * 4))
+    shared_mc_raw_fullrangeintegral_sigmas = multiprocessing.Array('d',range(num_fitted_pt_bins * 4))
     shared_mc_gauss_integrals = multiprocessing.Array('d',range(num_fitted_pt_bins * 4))
     shared_mc_gauss_integral_sigmas = multiprocessing.Array('d',range(num_fitted_pt_bins * 4))
     shared_mc_gauss_integral_sigmas_rangesyst = multiprocessing.Array('d',range(num_fitted_pt_bins * 4))
@@ -1939,6 +2113,8 @@ def main():
     shared_mc_alt_raw_integral_sigmas = multiprocessing.Array('d',range(num_fitted_pt_bins * 4))
     shared_mc_alt_raw_integral_sigmas_rangesyst = multiprocessing.Array('d',range(num_fitted_pt_bins * 4))
     shared_mc_alt_raw_integral_sigmas_bksyst = multiprocessing.Array('d',range(num_fitted_pt_bins * 4))
+    shared_mc_alt_raw_fullrangeintegrals = multiprocessing.Array('d',range(num_fitted_pt_bins * 4))
+    shared_mc_alt_raw_fullrangeintegral_sigmas = multiprocessing.Array('d',range(num_fitted_pt_bins * 4))
     shared_mc_alt_gauss_integrals = multiprocessing.Array('d',range(num_fitted_pt_bins * 4))
     shared_mc_alt_gauss_integral_sigmas = multiprocessing.Array('d',range(num_fitted_pt_bins * 4))
     shared_mc_alt_gauss_integral_sigmas_rangesyst = multiprocessing.Array('d',range(num_fitted_pt_bins * 4))
@@ -1948,14 +2124,14 @@ def main():
     shared_mc_alt_integral_cb_sigmas_rangesyst = multiprocessing.Array('d',range(num_fitted_pt_bins * 4))
     shared_mc_alt_integral_cb_sigmas_bksyst = multiprocessing.Array('d',range(num_fitted_pt_bins * 4))
 
-
+    shared_zeros = multiprocessing.Array('d',range(num_fitted_pt_bins * 4))
 
     print "Opened all input resources"
 
     proc = {}
     for i in range(threads):
-        proc[i] = multiprocessing.Process(target=TnPEfficiency, args=(mutex, shared_data_raw_integrals, shared_data_raw_integral_sigmas, shared_data_raw_integral_sigmas_rangesyst, shared_data_raw_integral_sigmas_bksyst, shared_data_gauss_integrals, shared_data_gauss_integral_sigmas, shared_data_gauss_integral_sigmas_rangesyst, shared_data_gauss_integral_sigmas_bksyst, shared_data_integrals_cb, shared_data_integral_cb_sigmas, shared_data_integral_cb_sigmas_rangesyst, shared_data_integral_cb_sigmas_bksyst, shared_mc_raw_integrals, shared_mc_raw_integral_sigmas, shared_mc_raw_integral_sigmas_rangesyst, shared_mc_raw_integral_sigmas_bksyst, shared_mc_gauss_integrals, shared_mc_gauss_integral_sigmas, shared_mc_gauss_integral_sigmas_rangesyst, shared_mc_gauss_integral_sigmas_bksyst, shared_mc_integrals_cb, shared_mc_integral_cb_sigmas, shared_mc_integral_cb_sigmas_rangesyst, shared_mc_integral_cb_sigmas_bksyst, shared_mc_alt_raw_integrals, shared_mc_alt_raw_integral_sigmas, shared_mc_alt_raw_integral_sigmas_rangesyst, shared_mc_alt_raw_integral_sigmas_bksyst, shared_mc_alt_gauss_integrals, shared_mc_alt_gauss_integral_sigmas, shared_mc_alt_gauss_integral_sigmas_rangesyst, shared_mc_alt_gauss_integral_sigmas_bksyst, shared_mc_alt_integrals_cb, shared_mc_alt_integral_cb_sigmas, shared_mc_alt_integral_cb_sigmas_rangesyst, shared_mc_alt_integral_cb_sigmas_bksyst, 
-                       datafile, mcfile, mcfile_alt, bins, binnames, indexlists[i], binindex_range_to_fit, workdir, config_file, skipped_lowpt_bins))
+        proc[i] = multiprocessing.Process(target=TnPEfficiency, args=(mutex, shared_data_raw_integrals, shared_data_raw_integral_sigmas, shared_data_raw_integral_sigmas_rangesyst, shared_data_raw_integral_sigmas_bksyst, shared_data_gauss_integrals, shared_data_gauss_integral_sigmas, shared_data_gauss_integral_sigmas_rangesyst, shared_data_gauss_integral_sigmas_bksyst, shared_data_integrals_cb, shared_data_integral_cb_sigmas, shared_data_integral_cb_sigmas_rangesyst, shared_data_integral_cb_sigmas_bksyst, shared_mc_raw_integrals, shared_mc_raw_integral_sigmas, shared_mc_raw_integral_sigmas_rangesyst, shared_mc_raw_integral_sigmas_bksyst, shared_mc_raw_fullrangeintegrals, shared_mc_raw_fullrangeintegral_sigmas, shared_mc_gauss_integrals, shared_mc_gauss_integral_sigmas, shared_mc_gauss_integral_sigmas_rangesyst, shared_mc_gauss_integral_sigmas_bksyst, shared_mc_integrals_cb, shared_mc_integral_cb_sigmas, shared_mc_integral_cb_sigmas_rangesyst, shared_mc_integral_cb_sigmas_bksyst, shared_mc_alt_raw_integrals, shared_mc_alt_raw_integral_sigmas, shared_mc_alt_raw_integral_sigmas_rangesyst, shared_mc_alt_raw_integral_sigmas_bksyst, shared_mc_alt_raw_fullrangeintegrals, shared_mc_alt_raw_fullrangeintegral_sigmas, shared_mc_alt_gauss_integrals, shared_mc_alt_gauss_integral_sigmas, shared_mc_alt_gauss_integral_sigmas_rangesyst, shared_mc_alt_gauss_integral_sigmas_bksyst, shared_mc_alt_integrals_cb, shared_mc_alt_integral_cb_sigmas, shared_mc_alt_integral_cb_sigmas_rangesyst, shared_mc_alt_integral_cb_sigmas_bksyst, 
+                       datafile, mcfile, mcfile_alt, bins, binnames, indexlists[i], binindex_range_to_fit, fitted_figures, workdir, config_file, skipped_lowpt_bins))
         proc[i].start()
 
     for i in range(threads):
@@ -1972,6 +2148,8 @@ def main():
         makeEfficiencyPlot(workdir+"efficiency-raw", shared_data_raw_integrals, shared_data_raw_integral_sigmas, shared_data_raw_integral_sigmas_bksyst, shared_data_raw_integral_sigmas_rangesyst, shared_mc_raw_integrals, shared_mc_raw_integral_sigmas, shared_mc_raw_integral_sigmas_bksyst, shared_mc_raw_integral_sigmas_rangesyst, ptbins_center_fit, binw_fit)
         makeEfficiencyPlot(workdir+"efficiency-bwg", shared_data_gauss_integrals, shared_data_gauss_integral_sigmas, shared_data_gauss_integral_sigmas_bksyst, shared_data_gauss_integral_sigmas_rangesyst, shared_mc_gauss_integrals, shared_mc_gauss_integral_sigmas, shared_mc_gauss_integral_sigmas_bksyst, shared_mc_gauss_integral_sigmas_rangesyst, ptbins_center_fit, binw_fit)
         makeEfficiencyPlot(workdir+"efficiency-crystalball", shared_data_integrals_cb, shared_data_integral_cb_sigmas, shared_data_integral_cb_sigmas_bksyst, shared_data_integral_cb_sigmas_rangesyst, shared_mc_integrals_cb, shared_mc_integral_cb_sigmas, shared_mc_integral_cb_sigmas_bksyst, shared_mc_integral_cb_sigmas_rangesyst, ptbins_center_fit, binw_fit)
+        makeEfficiencyPlot(workdir+"efficiency-crystalball-ccmc", shared_data_integrals_cb, shared_data_integral_cb_sigmas, shared_data_integral_cb_sigmas_bksyst, shared_data_integral_cb_sigmas_rangesyst, shared_mc_raw_integrals, shared_mc_raw_integral_sigmas, shared_mc_raw_integral_sigmas_bksyst, shared_mc_raw_integral_sigmas_rangesyst, ptbins_center_fit, binw_fit)
+        makeEfficiencyPlot(workdir+"efficiency-crystalball-ccmcfr", shared_data_integrals_cb, shared_data_integral_cb_sigmas, shared_data_integral_cb_sigmas_bksyst, shared_data_integral_cb_sigmas_rangesyst, shared_mc_raw_fullrangeintegrals, shared_mc_raw_fullrangeintegral_sigmas, shared_zeros, shared_zeros, ptbins_center_fit, binw_fit)
 
         if config_file['mcalt_name']:
             makeEfficiencyPlot(workdir+"efficiency-raw-alt", shared_data_raw_integrals, shared_data_raw_integral_sigmas, shared_data_raw_integral_sigmas_bksyst, shared_data_raw_integral_sigmas_rangesyst, shared_mc_alt_raw_integrals, shared_mc_alt_raw_integral_sigmas, shared_mc_alt_raw_integral_sigmas_bksyst, shared_mc_alt_raw_integral_sigmas_rangesyst, ptbins_center_fit, binw_fit)
@@ -1982,10 +2160,11 @@ def main():
     else:
         makeEfficiencyPlot(workdir+"efficiency-raw", shared_data_raw_integrals, shared_data_raw_integral_sigmas, shared_data_raw_integral_sigmas_bksyst, shared_data_raw_integral_sigmas_rangesyst, shared_mc_raw_integrals, shared_mc_raw_integral_sigmas, shared_mc_raw_integral_sigmas_bksyst, shared_mc_raw_integral_sigmas_rangesyst, ptbins_center_fit, binw_fit)
         makeEfficiencyPlot(workdir+"efficiency-crystalball-raw", shared_data_integrals_cb, shared_data_integral_cb_sigmas, shared_data_integral_cb_sigmas_bksyst, shared_data_integral_cb_sigmas_rangesyst, shared_mc_raw_integrals, shared_mc_raw_integral_sigmas, shared_mc_raw_integral_sigmas_bksyst, shared_mc_raw_integral_sigmas_rangesyst, ptbins_center_fit, binw_fit)
+        makeEfficiencyPlot(workdir+"efficiency-crystalball-rawfr", shared_data_integrals_cb, shared_data_integral_cb_sigmas, shared_data_integral_cb_sigmas_bksyst, shared_data_integral_cb_sigmas_rangesyst, shared_mc_raw_fullrangeintegrals, shared_mc_raw_fullrangeintegral_sigmas, shared_zeros, shared_zeros, ptbins_center_fit, binw_fit)
         makeEfficiencyPlot(workdir+"efficiency-crystalball-fixedwidth", shared_data_integrals_cb, shared_data_integral_cb_sigmas, shared_data_integral_cb_sigmas_bksyst, shared_data_integral_cb_sigmas_rangesyst, shared_mc_integrals_cb, shared_mc_integral_cb_sigmas, shared_mc_integral_cb_sigmas_bksyst, shared_mc_integral_cb_sigmas_rangesyst, ptbins_center_fit, binw_fit)
 
 
-    with open(workdir+"/results_"+config_file["resonance"]+"_chev"+str(config_file['chevorder'])+".yaml", "w") as out:
+    with open(workdir+"/results_"+config_file["resonance"]+"_chev"+str(config_file["chevorder"])+".yaml", "w") as out:
         write_mparray("shared_data_raw_integrals", shared_data_raw_integrals, out)
         write_mparray("shared_data_raw_integral_sigmas", shared_data_raw_integral_sigmas, out)
         write_mparray("shared_data_raw_integral_sigmas_bksyst", shared_data_raw_integral_sigmas_bksyst, out)
@@ -2002,6 +2181,8 @@ def main():
         write_mparray("shared_mc_raw_integral_sigmas",shared_mc_raw_integral_sigmas , out)
         write_mparray("shared_mc_raw_integral_sigmas_bksyst",shared_mc_raw_integral_sigmas_bksyst , out)
         write_mparray("shared_mc_raw_integral_sigmas_rangesyst",shared_mc_raw_integral_sigmas_rangesyst , out)
+        write_mparray("shared_mc_raw_fullrangeintegrals", shared_mc_raw_fullrangeintegrals, out)
+        write_mparray("shared_mc_raw_fullrangeintegral_sigmas",shared_mc_raw_fullrangeintegral_sigmas , out)
         write_mparray("shared_mc_gauss_integrals", shared_mc_gauss_integrals, out)
         write_mparray("shared_mc_gauss_integral_sigmas",shared_mc_gauss_integral_sigmas , out)
         write_mparray("shared_mc_gauss_integral_sigmas_bksyst",shared_mc_gauss_integral_sigmas_bksyst , out)
@@ -2014,6 +2195,8 @@ def main():
         write_mparray("shared_mc_alt_raw_integral_sigmas", shared_mc_alt_raw_integral_sigmas, out)
         write_mparray("shared_mc_alt_raw_integral_sigmas_bksyst", shared_mc_alt_raw_integral_sigmas_bksyst, out)
         write_mparray("shared_mc_alt_raw_integral_sigmas_rangesyst", shared_mc_alt_raw_integral_sigmas_rangesyst, out)
+        write_mparray("shared_mc_alt_raw_fullrangeintegrals", shared_mc_alt_raw_fullrangeintegrals, out)
+        write_mparray("shared_mc_alt_raw_fullrangeintegral_sigmas",shared_mc_alt_raw_fullrangeintegral_sigmas , out)
         write_mparray("shared_mc_alt_gauss_integrals", shared_mc_alt_gauss_integrals, out)
         write_mparray("shared_mc_alt_gauss_integral_sigmas", shared_mc_alt_gauss_integral_sigmas, out)
         write_mparray("shared_mc_alt_gauss_integral_sigmas_bksyst", shared_mc_alt_gauss_integral_sigmas_bksyst, out)

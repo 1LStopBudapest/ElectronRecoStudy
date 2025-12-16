@@ -13,6 +13,8 @@ def get_parser():
     argParser.add_argument('jpsidata',help='config_file')
     argParser.add_argument('zdata',help='config_file')
     argParser.add_argument('--threads', nargs='?', const=1, type=int)
+    argParser.add_argument('--fname1', nargs='?', const="JPsi", type=str)
+    argParser.add_argument('--fname2', nargs='?', const="Z18", type=str)
     return argParser
 
 
@@ -50,7 +52,7 @@ def main():
     with open(options.zdata, 'r') as file:
         z = yaml.safe_load(file)
 
-    makeEfficiencyPlot("SF/rawint_effs.png", 
+    makeEfficiencyPlot("SF/%svs%s_rawint_effs.png" % (options.fname1, options.fname2), 
                         j["shared_data_raw_integrals"],
                         j["shared_data_raw_integral_sigmas"],
                         j["shared_data_raw_integral_sigmas_bksyst"],
@@ -70,11 +72,40 @@ def main():
                         z["shared_mc_raw_integral_sigmas_bksyst"],
                         z["shared_mc_raw_integral_sigmas_rangesyst"],
                         z["ptbins_center_fit"],
-                        z["binw_fit"]
+                        z["binw_fit"],
+                        options.fname1,
+                        options.fname2
                         )
 
 
-    makeEfficiencyPlot("SF/cbint_jpsim_effs.png", 
+
+
+    makeEfficiencyPlot("SF/%svs%s_cbint_effs.png" % (options.fname1, options.fname2), 
+                        j["shared_data_integrals_cb"],
+                        j["shared_data_integral_cb_sigmas"],
+                        j["shared_data_integral_cb_sigmas_bksyst"],
+                        j["shared_data_integral_cb_sigmas_rangesyst"],
+                        j["shared_data_integrals_cb"],
+                        j["shared_data_integral_cb_sigmas"],
+                        j["shared_data_integral_cb_sigmas_bksyst"],
+                        j["shared_data_integral_cb_sigmas_rangesyst"],
+                        j["ptbins_center_fit"],
+                        j["binw_fit"],
+                        z["shared_data_integrals_cb"],
+                        z["shared_data_integral_cb_sigmas"],
+                        z["shared_data_integral_cb_sigmas_bksyst"],
+                        z["shared_data_integral_cb_sigmas_rangesyst"],
+                        z["shared_mc_integrals_cb"],
+                        z["shared_mc_integral_cb_sigmas"],
+                        z["shared_mc_integral_cb_sigmas_bksyst"],
+                        z["shared_mc_integral_cb_sigmas_rangesyst"],
+                        z["ptbins_center_fit"],
+                        z["binw_fit"],
+                        options.fname1,
+                        options.fname2
+                        )
+
+    makeEfficiencyPlot("SF/%svs%s_cbint_%sMCraw_effs.png" % (options.fname1, options.fname2, options.fname1), 
                         j["shared_data_integrals_cb"],
                         j["shared_data_integral_cb_sigmas"],
                         j["shared_data_integral_cb_sigmas_bksyst"],
@@ -94,8 +125,55 @@ def main():
                         z["shared_mc_integral_cb_sigmas_bksyst"],
                         z["shared_mc_integral_cb_sigmas_rangesyst"],
                         z["ptbins_center_fit"],
-                        z["binw_fit"]
+                        z["binw_fit"],
+                        options.fname1,
+                        options.fname2
                         )
+
+
+
+    makeEfficiencyPlot("SF/%svs%s_cbint_%sMCfullrangeraw_effs.png" % (options.fname1, options.fname2, options.fname1), 
+                        j["shared_data_integrals_cb"],
+                        j["shared_data_integral_cb_sigmas"],
+                        j["shared_data_integral_cb_sigmas_bksyst"],
+                        j["shared_data_integral_cb_sigmas_rangesyst"],
+                        j["shared_mc_raw_fullrangeintegrals"],
+                        j["shared_mc_raw_fullrangeintegral_sigmas"],
+                        [0]*len(j["shared_mc_raw_fullrangeintegrals"]),
+                        [0]*len(j["shared_mc_raw_fullrangeintegrals"]),
+                        j["ptbins_center_fit"],
+                        j["binw_fit"],
+                        z["shared_data_integrals_cb"],
+                        z["shared_data_integral_cb_sigmas"],
+                        z["shared_data_integral_cb_sigmas_bksyst"],
+                        z["shared_data_integral_cb_sigmas_rangesyst"],
+                        z["shared_mc_integrals_cb"],
+                        z["shared_mc_integral_cb_sigmas"],
+                        z["shared_mc_integral_cb_sigmas_bksyst"],
+                        z["shared_mc_integral_cb_sigmas_rangesyst"],
+                        z["ptbins_center_fit"],
+                        z["binw_fit"],
+                        options.fname1,
+                        options.fname2
+                        )
+
+
+def cutoff_errorbar_at_one(errors, efficiencies):
+    newerrors = [[],[]]
+    use = False
+    for error, eff in zip(errors, efficiencies):
+        newerrors[0].append(error)
+        if error + eff > 1:
+            use = True
+            print("Truncated errorbar at 1! FIXME!")
+            newerrors[1].append(1 - eff)
+        else:
+            newerrors[1].append(error)
+
+    if use:
+        return newerrors
+    return errors
+
 
 
 
@@ -105,7 +183,7 @@ def get_efficiency_error(P, F, DP, DF):
     return math.sqrt(  (  (  F/((P+F)**2)   )*DP   )**2    +    (  (  -P/((P+F)**2)     )*DF   )**2   )
 
 
-def makeEfficiencyPlot(filename, jpsi_data_integrals, jpsi_data_integral_sigmas, jpsi_data_integral_sigmas_bksyst, jpsi_data_integral_sigmas_rangesyst, jpsi_mc_integrals, jpsi_mc_integral_sigmas, jpsi_mc_integral_sigmas_bksyst, jpsi_mc_integral_sigmas_rangesyst, jpsi_ptbins_center_fit, jpsi_binw_fit, z_data_integrals, z_data_integral_sigmas, z_data_integral_sigmas_bksyst, z_data_integral_sigmas_rangesyst, z_mc_integrals, z_mc_integral_sigmas, z_mc_integral_sigmas_bksyst, z_mc_integral_sigmas_rangesyst, z_ptbins_center_fit, z_binw_fit):
+def makeEfficiencyPlot(filename, jpsi_data_integrals, jpsi_data_integral_sigmas, jpsi_data_integral_sigmas_bksyst, jpsi_data_integral_sigmas_rangesyst, jpsi_mc_integrals, jpsi_mc_integral_sigmas, jpsi_mc_integral_sigmas_bksyst, jpsi_mc_integral_sigmas_rangesyst, jpsi_ptbins_center_fit, jpsi_binw_fit, z_data_integrals, z_data_integral_sigmas, z_data_integral_sigmas_bksyst, z_data_integral_sigmas_rangesyst, z_mc_integrals, z_mc_integral_sigmas, z_mc_integral_sigmas_bksyst, z_mc_integral_sigmas_rangesyst, z_ptbins_center_fit, z_binw_fit, fname1, fname2):
 
     jpsi_data_eff_barrel = []
     jpsi_data_eff_barrel_error_total = []
@@ -234,6 +312,8 @@ def makeEfficiencyPlot(filename, jpsi_data_integrals, jpsi_data_integral_sigmas,
                 jpsi_scale_factor_endcap_black_x_binw.append(jpsi_binw_fit[pt_bin_number])
 
         pt_bin_number += 1
+
+
 
 
     z_data_eff_barrel = []
@@ -383,30 +463,43 @@ def makeEfficiencyPlot(filename, jpsi_data_integrals, jpsi_data_integral_sigmas,
     bottom_ax_barrel.set_ylabel("Data/MC")
 
 
+    # FIXME: EZT RENDESEN, HOGY A SF ERRORBARBA IS SZAMITSON!!!!
+
+    jpsi_data_eff_barrel_error_total = cutoff_errorbar_at_one(jpsi_data_eff_barrel_error_total, jpsi_data_eff_barrel)
+    jpsi_mc_eff_barrel_error_total = cutoff_errorbar_at_one(jpsi_mc_eff_barrel_error_total, jpsi_mc_eff_barrel)
+    z_data_eff_barrel_error_total = cutoff_errorbar_at_one(z_data_eff_barrel_error_total, z_data_eff_barrel)
+    z_mc_eff_barrel_error_total = cutoff_errorbar_at_one(z_mc_eff_barrel_error_total, z_mc_eff_barrel)
+    jpsi_data_eff_endcap_error_total = cutoff_errorbar_at_one(jpsi_data_eff_endcap_error_total, jpsi_data_eff_endcap)
+    jpsi_mc_eff_endcap_error_total = cutoff_errorbar_at_one(jpsi_mc_eff_endcap_error_total, jpsi_mc_eff_endcap)
+    z_data_eff_endcap_error_total = cutoff_errorbar_at_one(z_data_eff_endcap_error_total, z_data_eff_endcap)
+    z_mc_eff_endcap_error_total = cutoff_errorbar_at_one(z_mc_eff_endcap_error_total, z_mc_eff_endcap)
+
+
+
     #ax_barrel.plot(ptbins_center_fit, data_eff_barrel, "bs")
-    ax_barrel.errorbar(jpsi_ptbins_center_fit, jpsi_data_eff_barrel, yerr=jpsi_data_eff_barrel_error_total, xerr=jpsi_binw_fit, capsize=3, fmt=".", color="blue", ecolor = "blue", label="JPsi Data")
+    ax_barrel.errorbar(jpsi_ptbins_center_fit, jpsi_data_eff_barrel, yerr=jpsi_data_eff_barrel_error_total, xerr=jpsi_binw_fit, capsize=3, fmt=".", color="blue", ecolor = "blue", label=fname1+" Data")
     #ax_barrel.plot(ptbins_center_fit, mc_eff_barrel, "rs")
-    ax_barrel.errorbar(jpsi_ptbins_center_fit, jpsi_mc_eff_barrel, yerr=jpsi_mc_eff_barrel_error_total, xerr=jpsi_binw_fit, capsize=3, fmt=".", color="crimson", ecolor = "crimson", label="JPsi MC")
+    ax_barrel.errorbar(jpsi_ptbins_center_fit, jpsi_mc_eff_barrel, yerr=jpsi_mc_eff_barrel_error_total, xerr=jpsi_binw_fit, capsize=3, fmt=".", color="crimson", ecolor = "crimson", label=fname1+" MC")
 
 
-    ax_barrel.errorbar(z_ptbins_center_fit, z_data_eff_barrel, yerr=z_data_eff_barrel_error_total, xerr=z_binw_fit, capsize=3, fmt=".", color="cyan", ecolor = "cyan", label="Z Data")
-    ax_barrel.errorbar(z_ptbins_center_fit, z_mc_eff_barrel, yerr=z_mc_eff_barrel_error_total, xerr=z_binw_fit, capsize=3, fmt=".", color="magenta", ecolor = "magenta", label="Z MC")
+    ax_barrel.errorbar(z_ptbins_center_fit, z_data_eff_barrel, yerr=z_data_eff_barrel_error_total, xerr=z_binw_fit, capsize=3, fmt=".", color="cyan", ecolor = "cyan", label=fname2+" Data")
+    ax_barrel.errorbar(z_ptbins_center_fit, z_mc_eff_barrel, yerr=z_mc_eff_barrel_error_total, xerr=z_binw_fit, capsize=3, fmt=".", color="magenta", ecolor = "magenta", label=fname2+" MC")
 
 
-    bottom_ax_barrel.errorbar(jpsi_scale_factor_x_barrel, jpsi_scale_factor_barrel, yerr=jpsi_scale_factor_barrel_error, xerr=jpsi_scale_factor_x_barrel_binw, capsize=3, fmt=".", color="black", ecolor = "black")
+    bottom_ax_barrel.errorbar(jpsi_scale_factor_x_barrel, jpsi_scale_factor_barrel, yerr=jpsi_scale_factor_barrel_error, xerr=jpsi_scale_factor_x_barrel_binw, capsize=3, fmt=".", color="black", ecolor = "black", label = fname1 + " SF")
     bottom_ax_barrel.errorbar(jpsi_scale_factor_barrel_black_x, jpsi_scale_factor_barrel_black, xerr=jpsi_scale_factor_barrel_black_x_binw, fmt="x", color="black", ecolor="black")
 
 
-    bottom_ax_barrel.errorbar(z_scale_factor_x_barrel, z_scale_factor_barrel, yerr=z_scale_factor_barrel_error, xerr=z_scale_factor_x_barrel_binw, capsize=3, fmt=".", color="chocolate", ecolor = "chocolate")
+    bottom_ax_barrel.errorbar(z_scale_factor_x_barrel, z_scale_factor_barrel, yerr=z_scale_factor_barrel_error, xerr=z_scale_factor_x_barrel_binw, capsize=3, fmt=".", color="chocolate", ecolor = "chocolate", label = fname2 + " SF")
     bottom_ax_barrel.errorbar(z_scale_factor_barrel_black_x, z_scale_factor_barrel_black, xerr=z_scale_factor_barrel_black_x_binw, fmt="x", color="chocolate", ecolor="chocolate")
 
     #ax_endcap.plot(ptbins_center_fit, data_eff_endcap, "bs")
-    ax_endcap.errorbar(jpsi_ptbins_center_fit, jpsi_data_eff_endcap, yerr=jpsi_data_eff_endcap_error_total, xerr=jpsi_binw_fit, capsize=3, fmt=".", color="blue", ecolor = "blue", label="JPsi Data")
+    ax_endcap.errorbar(jpsi_ptbins_center_fit, jpsi_data_eff_endcap, yerr=jpsi_data_eff_endcap_error_total, xerr=jpsi_binw_fit, capsize=3, fmt=".", color="blue", ecolor = "blue", label=fname1+" Data")
     #ax_endcap.plot(ptbins_center_fit, mc_eff_endcap, "rs")
-    ax_endcap.errorbar(jpsi_ptbins_center_fit, jpsi_mc_eff_endcap, yerr=jpsi_mc_eff_endcap_error_total, xerr=jpsi_binw_fit, capsize=3, fmt=".", color="crimson", ecolor = "crimson", label="JPsi MC")
+    ax_endcap.errorbar(jpsi_ptbins_center_fit, jpsi_mc_eff_endcap, yerr=jpsi_mc_eff_endcap_error_total, xerr=jpsi_binw_fit, capsize=3, fmt=".", color="crimson", ecolor = "crimson", label=fname1+" MC")
 
-    ax_endcap.errorbar(z_ptbins_center_fit, z_data_eff_endcap, yerr=z_data_eff_endcap_error_total, xerr=z_binw_fit, capsize=3, fmt=".", color="cyan", ecolor = "cyan", label="Z Data")
-    ax_endcap.errorbar(z_ptbins_center_fit, z_mc_eff_endcap, yerr=z_mc_eff_endcap_error_total, xerr=z_binw_fit, capsize=3, fmt=".", color="magenta", ecolor = "magenta", label="Z MC")
+    ax_endcap.errorbar(z_ptbins_center_fit, z_data_eff_endcap, yerr=z_data_eff_endcap_error_total, xerr=z_binw_fit, capsize=3, fmt=".", color="cyan", ecolor = "cyan", label=fname2+" Data")
+    ax_endcap.errorbar(z_ptbins_center_fit, z_mc_eff_endcap, yerr=z_mc_eff_endcap_error_total, xerr=z_binw_fit, capsize=3, fmt=".", color="magenta", ecolor = "magenta", label=fname2+" MC")
 
 
     bottom_ax_endcap.errorbar(jpsi_scale_factor_x_endcap, jpsi_scale_factor_endcap, yerr=jpsi_scale_factor_endcap_error, xerr=jpsi_scale_factor_x_endcap_binw, capsize=3, fmt=".", color="black", ecolor = "black")
@@ -416,7 +509,8 @@ def makeEfficiencyPlot(filename, jpsi_data_integrals, jpsi_data_integral_sigmas,
     bottom_ax_endcap.errorbar(z_scale_factor_x_endcap, z_scale_factor_endcap, yerr=z_scale_factor_endcap_error, xerr=z_scale_factor_x_endcap_binw, capsize=3, fmt=".", color="chocolate", ecolor = "chocolate")
     bottom_ax_endcap.errorbar(z_scale_factor_endcap_black_x, z_scale_factor_endcap_black, xerr=z_scale_factor_endcap_black_x_binw, fmt="x", color="chocolate", ecolor="chocolate")
 
-    ax_barrel.legend(loc="best")
+    ax_barrel.legend(loc="best", fontsize=17)
+    bottom_ax_barrel.legend(loc="best", fontsize=17)
 
     ax_barrel.set_ylim([0,1.02])
     ax_endcap.set_ylim([0,1.02])
