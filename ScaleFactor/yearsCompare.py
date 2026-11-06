@@ -2,6 +2,8 @@ import numpy as np
 import os
 import numpy as np
 import math
+import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import yaml
 
@@ -15,6 +17,7 @@ def get_parser():
     argParser.add_argument('zdata17',help='config_file')
     argParser.add_argument('zdata18',help='config_file')
     argParser.add_argument('jpsi18',help='config_file')
+    argParser.add_argument('--fname', nargs='?', const="", default="", type=str)
     return argParser
 
 
@@ -41,6 +44,8 @@ def qsum(*args):
 qs = Infix(qsum)
 
 
+
+
 def main():
 
 
@@ -65,208 +70,97 @@ def main():
 
 
 
-    makeEfficiencyPlot("SF/z_all_years_raw.png", 
-                        z16pre["shared_data_raw_integrals"],
-                        z16pre["shared_data_raw_integral_sigmas"],
-                        z16pre["shared_data_raw_integral_sigmas_bksyst"],
-                        z16pre["shared_data_raw_integral_sigmas_rangesyst"],
-                        z16pre["shared_mc_raw_integrals"],
-                        z16pre["shared_mc_raw_integral_sigmas"],
-                        z16pre["shared_mc_raw_integral_sigmas_bksyst"],
-                        z16pre["shared_mc_raw_integral_sigmas_rangesyst"],
+    fname = "" if not options.fname else options.fname + "-"
+
+
+    makeEfficiencyPlot(f"SF/all_years-{fname}definitive.png", 
+
+                        z16pre["shared_data_minuit_fr_eff"],
+                        z16pre["shared_data_minuit_fr_eff_stat_err"],
+                        z16pre["shared_mc_cutcount_fr_eff"],
+                        z16pre["shared_mc_cutcount_fr_eff_total_err"],
                         z16pre["ptbins_center_fit"],
                         z16pre["binw_fit"],
 
-                        z16post["shared_data_raw_integrals"],
-                        z16post["shared_data_raw_integral_sigmas"],
-                        z16post["shared_data_raw_integral_sigmas_bksyst"],
-                        z16post["shared_data_raw_integral_sigmas_rangesyst"],
-                        z16post["shared_mc_raw_integrals"],
-                        z16post["shared_mc_raw_integral_sigmas"],
-                        z16post["shared_mc_raw_integral_sigmas_bksyst"],
-                        z16post["shared_mc_raw_integral_sigmas_rangesyst"],
+                        z16post["shared_data_minuit_fr_eff"],
+                        z16post["shared_data_minuit_fr_eff_stat_err"],
+                        z16post["shared_mc_cutcount_fr_eff"],
+                        z16post["shared_mc_cutcount_fr_eff_total_err"],
                         z16post["ptbins_center_fit"],
                         z16post["binw_fit"],
 
-                        z17["shared_data_raw_integrals"],
-                        z17["shared_data_raw_integral_sigmas"],
-                        z17["shared_data_raw_integral_sigmas_bksyst"],
-                        z17["shared_data_raw_integral_sigmas_rangesyst"],
-                        z17["shared_mc_raw_integrals"],
-                        z17["shared_mc_raw_integral_sigmas"],
-                        z17["shared_mc_raw_integral_sigmas_bksyst"],
-                        z17["shared_mc_raw_integral_sigmas_rangesyst"],
+                        z17["shared_data_minuit_fr_eff"],
+                        z17["shared_data_minuit_fr_eff_stat_err"],
+                        z17["shared_mc_cutcount_fr_eff"],
+                        z17["shared_mc_cutcount_fr_eff_total_err"],
                         z17["ptbins_center_fit"],
                         z17["binw_fit"],
 
-                        z18["shared_data_raw_integrals"],
-                        z18["shared_data_raw_integral_sigmas"],
-                        z18["shared_data_raw_integral_sigmas_bksyst"],
-                        z18["shared_data_raw_integral_sigmas_rangesyst"],
-                        z18["shared_mc_raw_integrals"],
-                        z18["shared_mc_raw_integral_sigmas"],
-                        z18["shared_mc_raw_integral_sigmas_bksyst"],
-                        z18["shared_mc_raw_integral_sigmas_rangesyst"],
+                        z18["shared_data_minuit_fr_eff"],
+                        z18["shared_data_minuit_fr_eff_stat_err"],
+                        z18["shared_mc_cutcount_fr_eff"],
+                        z18["shared_mc_cutcount_fr_eff_total_err"],
                         z18["ptbins_center_fit"],
                         z18["binw_fit"],
 
-
-                        j18["shared_data_raw_integrals"],
-                        j18["shared_data_raw_integral_sigmas"],
-                        j18["shared_data_raw_integral_sigmas_bksyst"],
-                        j18["shared_data_raw_integral_sigmas_rangesyst"],
-                        j18["shared_mc_raw_integrals"],
-                        j18["shared_mc_raw_integral_sigmas"],
-                        j18["shared_mc_raw_integral_sigmas_bksyst"],
-                        j18["shared_mc_raw_integral_sigmas_rangesyst"],
+                        j18["shared_data_minuit_eff"][(j18["skipped_lowpt_bins"])*2:],
+                        j18["shared_data_minuit_eff_total_err"][(j18["skipped_lowpt_bins"])*2:],
+                        j18["shared_mc_cutcount_fr_eff"][(j18["skipped_lowpt_bins"])*2:],
+                        j18["shared_mc_cutcount_fr_eff_total_err"][(j18["skipped_lowpt_bins"])*2:],
                         j18["ptbins_center_fit"],
-                        j18["binw_fit"]
-                        )
+                        j18["binw_fit"],
 
-
-    makeEfficiencyPlot("SF/z_all_years_cb.png", 
-                        z16pre["shared_data_integrals_cb"],
-                        z16pre["shared_data_integral_cb_sigmas"],
-                        z16pre["shared_data_integral_cb_sigmas_bksyst"],
-                        z16pre["shared_data_integral_cb_sigmas_rangesyst"],
-                        z16pre["shared_mc_integrals_cb"],
-                        z16pre["shared_mc_integral_cb_sigmas"],
-                        z16pre["shared_mc_integral_cb_sigmas_bksyst"],
-                        z16pre["shared_mc_integral_cb_sigmas_rangesyst"],
-                        z16pre["ptbins_center_fit"],
-                        z16pre["binw_fit"],
-
-                        z16post["shared_data_integrals_cb"],
-                        z16post["shared_data_integral_cb_sigmas"],
-                        z16post["shared_data_integral_cb_sigmas_bksyst"],
-                        z16post["shared_data_integral_cb_sigmas_rangesyst"],
-                        z16post["shared_mc_integrals_cb"],
-                        z16post["shared_mc_integral_cb_sigmas"],
-                        z16post["shared_mc_integral_cb_sigmas_bksyst"],
-                        z16post["shared_mc_integral_cb_sigmas_rangesyst"],
-                        z16post["ptbins_center_fit"],
-                        z16post["binw_fit"],
-
-                        z17["shared_data_integrals_cb"],
-                        z17["shared_data_integral_cb_sigmas"],
-                        z17["shared_data_integral_cb_sigmas_bksyst"],
-                        z17["shared_data_integral_cb_sigmas_rangesyst"],
-                        z17["shared_mc_integrals_cb"],
-                        z17["shared_mc_integral_cb_sigmas"],
-                        z17["shared_mc_integral_cb_sigmas_bksyst"],
-                        z17["shared_mc_integral_cb_sigmas_rangesyst"],
-                        z17["ptbins_center_fit"],
-                        z17["binw_fit"],
-
-                        z18["shared_data_integrals_cb"],
-                        z18["shared_data_integral_cb_sigmas"],
-                        z18["shared_data_integral_cb_sigmas_bksyst"],
-                        z18["shared_data_integral_cb_sigmas_rangesyst"],
-                        z18["shared_mc_integrals_cb"],
-                        z18["shared_mc_integral_cb_sigmas"],
-                        z18["shared_mc_integral_cb_sigmas_bksyst"],
-                        z18["shared_mc_integral_cb_sigmas_rangesyst"],
-                        z18["ptbins_center_fit"],
-                        z18["binw_fit"],
-
-                        j18["shared_data_integrals_cb"],
-                        j18["shared_data_integral_cb_sigmas"],
-                        j18["shared_data_integral_cb_sigmas_bksyst"],
-                        j18["shared_data_integral_cb_sigmas_rangesyst"],
-                        j18["shared_mc_raw_integrals"],  #!
-                        j18["shared_mc_raw_integral_sigmas"],  #!
-                        j18["shared_mc_raw_integral_sigmas_bksyst"],  #!
-                        j18["shared_mc_raw_integral_sigmas_rangesyst"],  #!
-                        j18["ptbins_center_fit"],
-                        j18["binw_fit"]
                         )
 
 
 
-    makeEfficiencyPlot("SF/z_all_years_cb-jmcfr.png", 
-                        z16pre["shared_data_integrals_cb"],
-                        z16pre["shared_data_integral_cb_sigmas"],
-                        z16pre["shared_data_integral_cb_sigmas_bksyst"],
-                        z16pre["shared_data_integral_cb_sigmas_rangesyst"],
-                        z16pre["shared_mc_integrals_cb"],
-                        z16pre["shared_mc_integral_cb_sigmas"],
-                        z16pre["shared_mc_integral_cb_sigmas_bksyst"],
-                        z16pre["shared_mc_integral_cb_sigmas_rangesyst"],
-                        z16pre["ptbins_center_fit"],
-                        z16pre["binw_fit"],
 
-                        z16post["shared_data_integrals_cb"],
-                        z16post["shared_data_integral_cb_sigmas"],
-                        z16post["shared_data_integral_cb_sigmas_bksyst"],
-                        z16post["shared_data_integral_cb_sigmas_rangesyst"],
-                        z16post["shared_mc_integrals_cb"],
-                        z16post["shared_mc_integral_cb_sigmas"],
-                        z16post["shared_mc_integral_cb_sigmas_bksyst"],
-                        z16post["shared_mc_integral_cb_sigmas_rangesyst"],
-                        z16post["ptbins_center_fit"],
-                        z16post["binw_fit"],
-
-                        z17["shared_data_integrals_cb"],
-                        z17["shared_data_integral_cb_sigmas"],
-                        z17["shared_data_integral_cb_sigmas_bksyst"],
-                        z17["shared_data_integral_cb_sigmas_rangesyst"],
-                        z17["shared_mc_integrals_cb"],
-                        z17["shared_mc_integral_cb_sigmas"],
-                        z17["shared_mc_integral_cb_sigmas_bksyst"],
-                        z17["shared_mc_integral_cb_sigmas_rangesyst"],
-                        z17["ptbins_center_fit"],
-                        z17["binw_fit"],
-
-                        z18["shared_data_integrals_cb"],
-                        z18["shared_data_integral_cb_sigmas"],
-                        z18["shared_data_integral_cb_sigmas_bksyst"],
-                        z18["shared_data_integral_cb_sigmas_rangesyst"],
-                        z18["shared_mc_integrals_cb"],
-                        z18["shared_mc_integral_cb_sigmas"],
-                        z18["shared_mc_integral_cb_sigmas_bksyst"],
-                        z18["shared_mc_integral_cb_sigmas_rangesyst"],
-                        z18["ptbins_center_fit"],
-                        z18["binw_fit"],
-
-                        j18["shared_data_integrals_cb"],
-                        j18["shared_data_integral_cb_sigmas"],
-                        j18["shared_data_integral_cb_sigmas_bksyst"],
-                        j18["shared_data_integral_cb_sigmas_rangesyst"],
-                        j18["shared_mc_raw_fullrangeintegrals"],  #!
-                        j18["shared_mc_raw_fullrangeintegral_sigmas"],  #!
-                        [0]*len(j18["shared_mc_raw_fullrangeintegrals"]),  #!
-                        [0]*len(j18["shared_mc_raw_fullrangeintegrals"]),  #!
-                        j18["ptbins_center_fit"],
-                        j18["binw_fit"]
-                        )
-
-
-def get_efficiency_error(P, F, DP, DF):
-    return math.sqrt(  (  (  F/((P+F)**2)   )*DP   )**2    +    (  (  -P/((P+F)**2)     )*DF   )**2   )
+def getSFerrorbar(data, mc, data_err, mc_err, rho=0.5):
+    sf = data / mc
+    data_relerr = data_err/data
+    mc_relerr = mc_err/mc
+    rel_err = np.sqrt(  data_relerr**2  + mc_relerr**2   - 2*rho*data_relerr*mc_relerr  )
+    return rel_err * sf
 
 
 def makeEfficiencyPlot(filename, 
-    z_16pre_data_integrals, z_16pre_data_integral_sigmas, z_16pre_data_integral_sigmas_bksyst, z_16pre_data_integral_sigmas_rangesyst, z_16pre_mc_integrals, z_16pre_mc_integral_sigmas, z_16pre_mc_integral_sigmas_bksyst, z_16pre_mc_integral_sigmas_rangesyst, z_16pre_ptbins_center_fit, z_16pre_binw_fit,
-    z_16post_data_integrals, z_16post_data_integral_sigmas, z_16post_data_integral_sigmas_bksyst, z_16post_data_integral_sigmas_rangesyst, z_16post_mc_integrals, z_16post_mc_integral_sigmas, z_16post_mc_integral_sigmas_bksyst, z_16post_mc_integral_sigmas_rangesyst, z_16post_ptbins_center_fit, z_16post_binw_fit,
-    z_17_data_integrals, z_17_data_integral_sigmas, z_17_data_integral_sigmas_bksyst, z_17_data_integral_sigmas_rangesyst, z_17_mc_integrals, z_17_mc_integral_sigmas, z_17_mc_integral_sigmas_bksyst, z_17_mc_integral_sigmas_rangesyst, z_17_ptbins_center_fit, z_17_binw_fit,
-    z_18_data_integrals, z_18_data_integral_sigmas, z_18_data_integral_sigmas_bksyst, z_18_data_integral_sigmas_rangesyst, z_18_mc_integrals, z_18_mc_integral_sigmas, z_18_mc_integral_sigmas_bksyst, z_18_mc_integral_sigmas_rangesyst, z_18_ptbins_center_fit, z_18_binw_fit,
-    j_18_data_integrals, j_18_data_integral_sigmas, j_18_data_integral_sigmas_bksyst, j_18_data_integral_sigmas_rangesyst, j_18_mc_integrals, j_18_mc_integral_sigmas, j_18_mc_integral_sigmas_bksyst, j_18_mc_integral_sigmas_rangesyst, j_18_ptbins_center_fit, j_18_binw_fit,
-    
+
+    z16pre_data_eff, z16pre_data_eff_error, z16pre_mc_eff, z16pre_mc_eff_error,
+    z16pre_ptbins_center_fit, z16pre_binw_fit, 
+
+    z16post_data_eff, z16post_data_eff_error, z16post_mc_eff, z16post_mc_eff_error,
+    z16post_ptbins_center_fit, z16post_binw_fit, 
+
+    z17_data_eff, z17_data_eff_error, z17_mc_eff, z17_mc_eff_error,
+    z17_ptbins_center_fit, z17_binw_fit, 
+
+
+    z18_data_eff, z18_data_eff_error, z18_mc_eff, z18_mc_eff_error,
+    z18_ptbins_center_fit, z18_binw_fit, 
+
+
+    jpsi_data_eff, jpsi_data_eff_error, jpsi_mc_eff, jpsi_mc_eff_error,
+    jpsi_ptbins_center_fit, jpsi_binw_fit,
+
+
     ):
 
 
 
 
-    def getSF(z_data_integrals, z_data_integral_sigmas, z_data_integral_sigmas_bksyst, z_data_integral_sigmas_rangesyst, z_mc_integrals, z_mc_integral_sigmas, z_mc_integral_sigmas_bksyst, z_mc_integral_sigmas_rangesyst, z_ptbins_center_fit, z_binw_fit):
+    def getSF(
+        z_data_eff, z_data_eff_error, z_mc_eff, z_mc_eff_error,
+        z_ptbins_center_fit, z_binw_fit, 
+        ):
         
-        z_data_eff_barrel = []
-        z_data_eff_barrel_error_total = []
-        z_mc_eff_barrel = []
-        z_mc_eff_barrel_error_total = []
-        z_data_eff_endcap = []
-        z_data_eff_endcap_error_total = []
-        z_mc_eff_endcap = []
-        z_mc_eff_endcap_error_total = []
+        z_data_eff_barrel = z_data_eff[0::2]
+        z_data_eff_barrel_error_total = z_data_eff_error[0::2]
+        z_mc_eff_barrel = z_mc_eff[0::2]
+        z_mc_eff_barrel_error_total = z_mc_eff_error[0::2]
+        z_data_eff_endcap = z_data_eff[1::2]
+        z_data_eff_endcap_error_total = z_data_eff_error[1::2]
+        z_mc_eff_endcap = z_mc_eff[1::2]
+        z_mc_eff_endcap_error_total = z_mc_eff_error[1::2]
 
         z_scale_factor_barrel = []
         z_scale_factor_barrel_error = []
@@ -284,98 +178,30 @@ def makeEfficiencyPlot(filename,
         z_scale_factor_endcap_black_x = []
         z_scale_factor_endcap_black_x_binw = []
 
+
         pt_bin_number = 0
-        for i in range(0,len(z_data_integrals),4):
-                
-            if z_data_integrals[i] and z_data_integrals[i+1]:
-                data_barrel_pass = z_data_integrals[i]
-                data_barrel_pass_error = z_data_integral_sigmas[i] if z_data_integral_sigmas[i] and z_data_integral_sigmas[i]/z_data_integrals[i] < 1 else False
-                data_barrel_pass_error_bksyst = abs(z_data_integral_sigmas_bksyst[i]) 
-                data_barrel_pass_error_rangesyst = abs(z_data_integral_sigmas_rangesyst[i])
-                data_barrel_fail = z_data_integrals[i+1] 
-                data_barrel_fail_error = z_data_integral_sigmas[i+1] if z_data_integral_sigmas[i+1] and z_data_integral_sigmas[i+1]/z_data_integrals[i+1] < 1 else False
-                data_barrel_fail_error_bksyst = abs(z_data_integral_sigmas_bksyst[i+1]) 
-                data_barrel_fail_error_rangesyst = abs(z_data_integral_sigmas_rangesyst[i+1])
+        for i in range(len(z_data_eff_barrel)):
+            if z_data_eff_barrel[i] > 0 and z_mc_eff_barrel[i] > 0:
 
-
-                z_data_eff_barrel.append(data_barrel_pass / (data_barrel_pass + data_barrel_fail))
-                z_data_eff_barrel_error_total.append(get_efficiency_error(data_barrel_pass, data_barrel_fail, qsum(data_barrel_pass_error, data_barrel_pass_error_bksyst, data_barrel_pass_error_rangesyst), qsum(data_barrel_fail_error, data_barrel_fail_error_bksyst,data_barrel_fail_error_rangesyst)) if data_barrel_pass_error and data_barrel_fail_error else 0  )
-            else:
-                z_data_eff_barrel.append(-1)
-                z_data_eff_barrel_error_total.append( 0.001 )
-
-            if z_data_integrals[i+2] and z_data_integrals[i+3]:
-                data_endcap_pass = z_data_integrals[i+2]
-                data_endcap_pass_error = z_data_integral_sigmas[i+2] if z_data_integral_sigmas[i+2]  and z_data_integral_sigmas[i+2]/z_data_integrals[i+2] < 1 else False
-                data_endcap_pass_error_bksyst = abs(z_data_integral_sigmas_bksyst[i+2]) 
-                data_endcap_pass_error_rangesyst = abs(z_data_integral_sigmas_rangesyst[i+2])
-                data_endcap_fail = z_data_integrals[i+3]
-                data_endcap_fail_error = z_data_integral_sigmas[i+3] if z_data_integral_sigmas[i+3]  and z_data_integral_sigmas[i+3]/z_data_integrals[i+3] < 1 else False
-                data_endcap_fail_error_bksyst = abs(z_data_integral_sigmas_bksyst[i+3])
-                data_endcap_fail_error_rangesyst = abs(z_data_integral_sigmas_rangesyst[i+3]) 
-
-                z_data_eff_endcap.append(data_endcap_pass / (data_endcap_pass + data_endcap_fail))
-                z_data_eff_endcap_error_total.append(  get_efficiency_error(data_endcap_pass, data_endcap_fail, qsum(data_endcap_pass_error, data_endcap_pass_error_bksyst, data_endcap_pass_error_rangesyst), qsum(data_endcap_fail_error, data_endcap_fail_error_bksyst,data_endcap_fail_error_rangesyst)) if data_endcap_pass_error and data_endcap_fail_error else 0 )
-            else:
-                z_data_eff_endcap.append(-1)
-                z_data_eff_endcap_error_total.append( 0.001 )
-
-
-            if z_mc_integrals[i] and z_mc_integrals[i+1]:
-                mc_barrel_pass = z_mc_integrals[i]
-                mc_barrel_pass_error = z_mc_integral_sigmas[i] if z_mc_integral_sigmas[i] and z_mc_integral_sigmas[i]/z_mc_integrals[i] < 1 else False
-                mc_barrel_pass_error_bksyst = abs(z_mc_integral_sigmas_bksyst[i]) 
-                mc_barrel_pass_error_rangesyst = abs(z_mc_integral_sigmas_rangesyst[i])
-                mc_barrel_fail = z_mc_integrals[i+1]
-                mc_barrel_fail_error = z_mc_integral_sigmas[i+1] if z_mc_integral_sigmas[i+1]  and z_mc_integral_sigmas[i+1]/z_mc_integrals[i+1] < 1 else False
-                mc_barrel_fail_error_bksyst = abs(z_mc_integral_sigmas_bksyst[i+1]) 
-                mc_barrel_fail_error_rangesyst = abs(z_mc_integral_sigmas_rangesyst[i+1])
-
-                z_mc_eff_barrel.append(mc_barrel_pass / (mc_barrel_pass + mc_barrel_fail))
-                z_mc_eff_barrel_error_total.append(get_efficiency_error(mc_barrel_pass, mc_barrel_fail, qsum(mc_barrel_pass_error, mc_barrel_pass_error_bksyst, mc_barrel_pass_error_rangesyst), qsum(mc_barrel_fail_error, mc_barrel_fail_error_bksyst,mc_barrel_fail_error_rangesyst)) if mc_barrel_pass_error and mc_barrel_fail_error else 0   )
-            else:
-                z_mc_eff_barrel.append(-1)
-                z_mc_eff_barrel_error_total.append( 0.001 )
-
-
-
-            if z_mc_integrals[i+2] and z_mc_integrals[i+3]:
-                mc_endcap_pass = z_mc_integrals[i+2]
-                mc_endcap_pass_error = z_mc_integral_sigmas[i+2] if z_mc_integral_sigmas[i+2] and z_mc_integral_sigmas[i+2]/z_mc_integrals[i+2] < 1 else False
-                mc_endcap_pass_error_bksyst = abs(z_mc_integral_sigmas_bksyst[i+2]) 
-                mc_endcap_pass_error_rangesyst = abs(z_mc_integral_sigmas_rangesyst[i+2])
-                mc_endcap_fail = z_mc_integrals[i+3]
-                mc_endcap_fail_error = z_mc_integral_sigmas[i+3] if z_mc_integral_sigmas[i+3] and z_mc_integral_sigmas[i+3]/z_mc_integrals[i+3] < 1 else False
-                mc_endcap_fail_error_bksyst = abs(z_mc_integral_sigmas_bksyst[i+3]) 
-                mc_endcap_fail_error_rangesyst = abs(z_mc_integral_sigmas_rangesyst[i+3])
-
-                z_mc_eff_endcap.append(mc_endcap_pass / (mc_endcap_pass + mc_endcap_fail))
-                z_mc_eff_endcap_error_total.append( get_efficiency_error(mc_endcap_pass, mc_endcap_fail, qsum(mc_endcap_pass_error, mc_endcap_pass_error_bksyst,mc_endcap_pass_error_rangesyst), qsum(mc_endcap_fail_error, mc_endcap_fail_error_bksyst,mc_endcap_fail_error_rangesyst)) if mc_endcap_pass_error and mc_endcap_fail_error else 0  )
-            else:
-                z_mc_eff_endcap.append(-1)
-                z_mc_eff_endcap_error_total.append( 0.001 )
-
-            if z_data_eff_barrel[-1] > 0 and z_mc_eff_barrel[-1] > 0:
-
-                if z_data_eff_barrel_error_total[-1] > 0 and z_mc_eff_barrel_error_total[-1]:
-                    z_scale_factor_barrel.append(z_data_eff_barrel[-1]/z_mc_eff_barrel[-1])
+                if z_data_eff_barrel_error_total[i] > 0 and z_mc_eff_barrel_error_total[i]:
+                    z_scale_factor_barrel.append(z_data_eff_barrel[i]/z_mc_eff_barrel[i])
                     z_scale_factor_x_barrel.append(z_ptbins_center_fit[pt_bin_number])
                     z_scale_factor_x_barrel_binw.append(z_binw_fit[pt_bin_number])
-                    z_scale_factor_barrel_error.append( ((z_data_eff_barrel_error_total[-1]/z_data_eff_barrel[-1]) |qs| (z_mc_eff_barrel_error_total[-1]/z_mc_eff_barrel[-1]) ) * z_scale_factor_barrel[-1]    )  # HALOOOO!!!
+                    z_scale_factor_barrel_error.append( getSFerrorbar(z_data_eff_barrel[i], z_mc_eff_barrel[i], z_data_eff_barrel_error_total[i],  z_mc_eff_barrel_error_total[i] )   )  
                 else:
-                    z_scale_factor_barrel_black.append(z_data_eff_barrel[-1]/z_mc_eff_barrel[-1])
+                    z_scale_factor_barrel_black.append(z_data_eff_barrel[i]/z_mc_eff_barrel[i])
                     z_scale_factor_barrel_black_x.append(z_ptbins_center_fit[pt_bin_number])
                     z_scale_factor_barrel_black_x_binw.append(z_binw_fit[pt_bin_number])
 
-            if z_data_eff_endcap[-1] > 0 and z_mc_eff_endcap[-1] > 0:
+            if z_data_eff_endcap[i] > 0 and z_mc_eff_endcap[i] > 0:
 
-                if z_data_eff_endcap_error_total[-1] > 0 and z_mc_eff_endcap_error_total[-1] > 0:
-                    z_scale_factor_endcap.append(z_data_eff_endcap[-1]/z_mc_eff_endcap[-1])
+                if z_data_eff_endcap_error_total[i] > 0 and z_mc_eff_endcap_error_total[i] > 0:
+                    z_scale_factor_endcap.append(z_data_eff_endcap[i]/z_mc_eff_endcap[i])
                     z_scale_factor_x_endcap.append(z_ptbins_center_fit[pt_bin_number])
                     z_scale_factor_x_endcap_binw.append(z_binw_fit[pt_bin_number])
-                    z_scale_factor_endcap_error.append( ((z_data_eff_endcap_error_total[-1]/z_data_eff_endcap[-1]) |qs| (z_mc_eff_endcap_error_total[-1]/z_mc_eff_endcap[-1]) ) * z_scale_factor_endcap[-1]    )
+                    z_scale_factor_endcap_error.append(  getSFerrorbar(z_data_eff_endcap[i], z_mc_eff_endcap[i], z_data_eff_endcap_error_total[i],  z_mc_eff_endcap_error_total[i])    )
                 else:
-                    z_scale_factor_endcap_black.append(z_data_eff_endcap[-1]/z_mc_eff_endcap[-1])
+                    z_scale_factor_endcap_black.append(z_data_eff_endcap[i]/z_mc_eff_endcap[i])
                     z_scale_factor_endcap_black_x.append(z_ptbins_center_fit[pt_bin_number])
                     z_scale_factor_endcap_black_x_binw.append(z_binw_fit[pt_bin_number])
 
@@ -383,23 +209,26 @@ def makeEfficiencyPlot(filename,
 
         return z_scale_factor_barrel, z_scale_factor_barrel_error, z_scale_factor_x_barrel, z_scale_factor_x_barrel_binw, z_scale_factor_barrel_black, z_scale_factor_barrel_black_x, z_scale_factor_barrel_black_x_binw, z_scale_factor_endcap, z_scale_factor_endcap_error, z_scale_factor_x_endcap, z_scale_factor_x_endcap_binw, z_scale_factor_endcap_black, z_scale_factor_endcap_black_x, z_scale_factor_endcap_black_x_binw
 
-    z_16pre_scale_factor_barrel, z_16pre_scale_factor_barrel_error, z_16pre_scale_factor_x_barrel, z_16pre_scale_factor_x_barrel_binw, z_16pre_scale_factor_barrel_black, z_16pre_scale_factor_barrel_black_x, z_16pre_scale_factor_barrel_black_x_binw, z_16pre_scale_factor_endcap, z_16pre_scale_factor_endcap_error, z_16pre_scale_factor_x_endcap, z_16pre_scale_factor_x_endcap_binw, z_16pre_scale_factor_endcap_black, z_16pre_scale_factor_endcap_black_x, z_16pre_scale_factor_endcap_black_x_binw = getSF(z_16pre_data_integrals, z_16pre_data_integral_sigmas, z_16pre_data_integral_sigmas_bksyst, z_16pre_data_integral_sigmas_rangesyst, z_16pre_mc_integrals, z_16pre_mc_integral_sigmas, z_16pre_mc_integral_sigmas_bksyst, z_16pre_mc_integral_sigmas_rangesyst, z_16pre_ptbins_center_fit, z_16pre_binw_fit)
-
-    z_16post_scale_factor_barrel, z_16post_scale_factor_barrel_error, z_16post_scale_factor_x_barrel, z_16post_scale_factor_x_barrel_binw, z_16post_scale_factor_barrel_black, z_16post_scale_factor_barrel_black_x, z_16post_scale_factor_barrel_black_x_binw, z_16post_scale_factor_endcap, z_16post_scale_factor_endcap_error, z_16post_scale_factor_x_endcap, z_16post_scale_factor_x_endcap_binw, z_16post_scale_factor_endcap_black, z_16post_scale_factor_endcap_black_x, z_16post_scale_factor_endcap_black_x_binw = getSF(z_16post_data_integrals, z_16post_data_integral_sigmas, z_16post_data_integral_sigmas_bksyst, z_16post_data_integral_sigmas_rangesyst, z_16post_mc_integrals, z_16post_mc_integral_sigmas, z_16post_mc_integral_sigmas_bksyst, z_16post_mc_integral_sigmas_rangesyst, z_16post_ptbins_center_fit, z_16post_binw_fit)
-
-    z_17_scale_factor_barrel, z_17_scale_factor_barrel_error, z_17_scale_factor_x_barrel, z_17_scale_factor_x_barrel_binw, z_17_scale_factor_barrel_black, z_17_scale_factor_barrel_black_x, z_17_scale_factor_barrel_black_x_binw, z_17_scale_factor_endcap, z_17_scale_factor_endcap_error, z_17_scale_factor_x_endcap, z_17_scale_factor_x_endcap_binw, z_17_scale_factor_endcap_black, z_17_scale_factor_endcap_black_x, z_17_scale_factor_endcap_black_x_binw = getSF(z_17_data_integrals, z_17_data_integral_sigmas, z_17_data_integral_sigmas_bksyst, z_17_data_integral_sigmas_rangesyst, z_17_mc_integrals, z_17_mc_integral_sigmas, z_17_mc_integral_sigmas_bksyst, z_17_mc_integral_sigmas_rangesyst, z_17_ptbins_center_fit, z_17_binw_fit)
-
-    z_18_scale_factor_barrel, z_18_scale_factor_barrel_error, z_18_scale_factor_x_barrel, z_18_scale_factor_x_barrel_binw, z_18_scale_factor_barrel_black, z_18_scale_factor_barrel_black_x, z_18_scale_factor_barrel_black_x_binw, z_18_scale_factor_endcap, z_18_scale_factor_endcap_error, z_18_scale_factor_x_endcap, z_18_scale_factor_x_endcap_binw, z_18_scale_factor_endcap_black, z_18_scale_factor_endcap_black_x, z_18_scale_factor_endcap_black_x_binw = getSF(z_18_data_integrals, z_18_data_integral_sigmas, z_18_data_integral_sigmas_bksyst, z_18_data_integral_sigmas_rangesyst, z_18_mc_integrals, z_18_mc_integral_sigmas, z_18_mc_integral_sigmas_bksyst, z_18_mc_integral_sigmas_rangesyst, z_18_ptbins_center_fit, z_18_binw_fit)
 
 
-    j_18_scale_factor_barrel, j_18_scale_factor_barrel_error, j_18_scale_factor_x_barrel, j_18_scale_factor_x_barrel_binw, j_18_scale_factor_barrel_black, j_18_scale_factor_barrel_black_x, j_18_scale_factor_barrel_black_x_binw, j_18_scale_factor_endcap, j_18_scale_factor_endcap_error, j_18_scale_factor_x_endcap, j_18_scale_factor_x_endcap_binw, j_18_scale_factor_endcap_black, j_18_scale_factor_endcap_black_x, j_18_scale_factor_endcap_black_x_binw = getSF(j_18_data_integrals, j_18_data_integral_sigmas, j_18_data_integral_sigmas_bksyst, j_18_data_integral_sigmas_rangesyst, j_18_mc_integrals, j_18_mc_integral_sigmas, j_18_mc_integral_sigmas_bksyst, j_18_mc_integral_sigmas_rangesyst, j_18_ptbins_center_fit, j_18_binw_fit)
+
+    z_16pre_scale_factor_barrel, z_16pre_scale_factor_barrel_error, z_16pre_scale_factor_x_barrel, z_16pre_scale_factor_x_barrel_binw, z_16pre_scale_factor_barrel_black, z_16pre_scale_factor_barrel_black_x, z_16pre_scale_factor_barrel_black_x_binw, z_16pre_scale_factor_endcap, z_16pre_scale_factor_endcap_error, z_16pre_scale_factor_x_endcap, z_16pre_scale_factor_x_endcap_binw, z_16pre_scale_factor_endcap_black, z_16pre_scale_factor_endcap_black_x, z_16pre_scale_factor_endcap_black_x_binw = getSF(z16pre_data_eff, z16pre_data_eff_error, z16pre_mc_eff, z16pre_mc_eff_error, z16pre_ptbins_center_fit, z16pre_binw_fit)
+
+    z_16post_scale_factor_barrel, z_16post_scale_factor_barrel_error, z_16post_scale_factor_x_barrel, z_16post_scale_factor_x_barrel_binw, z_16post_scale_factor_barrel_black, z_16post_scale_factor_barrel_black_x, z_16post_scale_factor_barrel_black_x_binw, z_16post_scale_factor_endcap, z_16post_scale_factor_endcap_error, z_16post_scale_factor_x_endcap, z_16post_scale_factor_x_endcap_binw, z_16post_scale_factor_endcap_black, z_16post_scale_factor_endcap_black_x, z_16post_scale_factor_endcap_black_x_binw = getSF(z16post_data_eff, z16post_data_eff_error, z16post_mc_eff, z16post_mc_eff_error, z16post_ptbins_center_fit, z16post_binw_fit)
+
+    z_17_scale_factor_barrel, z_17_scale_factor_barrel_error, z_17_scale_factor_x_barrel, z_17_scale_factor_x_barrel_binw, z_17_scale_factor_barrel_black, z_17_scale_factor_barrel_black_x, z_17_scale_factor_barrel_black_x_binw, z_17_scale_factor_endcap, z_17_scale_factor_endcap_error, z_17_scale_factor_x_endcap, z_17_scale_factor_x_endcap_binw, z_17_scale_factor_endcap_black, z_17_scale_factor_endcap_black_x, z_17_scale_factor_endcap_black_x_binw = getSF(z17_data_eff, z17_data_eff_error, z17_mc_eff, z17_mc_eff_error, z17_ptbins_center_fit, z17_binw_fit)
+
+    z_18_scale_factor_barrel, z_18_scale_factor_barrel_error, z_18_scale_factor_x_barrel, z_18_scale_factor_x_barrel_binw, z_18_scale_factor_barrel_black, z_18_scale_factor_barrel_black_x, z_18_scale_factor_barrel_black_x_binw, z_18_scale_factor_endcap, z_18_scale_factor_endcap_error, z_18_scale_factor_x_endcap, z_18_scale_factor_x_endcap_binw, z_18_scale_factor_endcap_black, z_18_scale_factor_endcap_black_x, z_18_scale_factor_endcap_black_x_binw = getSF(z18_data_eff, z18_data_eff_error, z18_mc_eff, z18_mc_eff_error, z18_ptbins_center_fit, z18_binw_fit)
+
+
+    j_18_scale_factor_barrel, j_18_scale_factor_barrel_error, j_18_scale_factor_x_barrel, j_18_scale_factor_x_barrel_binw, j_18_scale_factor_barrel_black, j_18_scale_factor_barrel_black_x, j_18_scale_factor_barrel_black_x_binw, j_18_scale_factor_endcap, j_18_scale_factor_endcap_error, j_18_scale_factor_x_endcap, j_18_scale_factor_x_endcap_binw, j_18_scale_factor_endcap_black, j_18_scale_factor_endcap_black_x, j_18_scale_factor_endcap_black_x_binw = getSF(jpsi_data_eff, jpsi_data_eff_error, jpsi_mc_eff, jpsi_mc_eff_error, jpsi_ptbins_center_fit, jpsi_binw_fit)
 
     
 
     axs = []
     bottom_axs = []
     fig = plt.figure(tight_layout=True, figsize=(15, 10))
-    gs = plt.GridSpec(2, 2, height_ratios=[2, 1],  figure=fig)# hspace=0,
+    gs = plt.GridSpec(2, 2, height_ratios=[3, 1],  figure=fig)# hspace=0,
     for i in range(2):
         axs.append(fig.add_subplot(gs[i]))
         bottom_axs.append(fig.add_subplot(gs[i+2], sharex=axs[-1]))
@@ -410,16 +239,16 @@ def makeEfficiencyPlot(filename,
     bottom_ax_endcap = bottom_axs[1]
 
 
-    ax_barrel.set_xlabel(r"$p_{T}$ [GeV]")
-    ax_barrel.set_ylabel("Data/MC")
-    ax_endcap.set_xlabel(r"$p_{T}$ [GeV]")
-    ax_endcap.set_ylabel("Data/MC")
-    ax_barrel.set_title(r"$|\eta | < 1.4442$")
-    ax_endcap.set_title(r"$1.566 < |\eta | < 2.50$")
-    bottom_ax_barrel.set_xlabel(r"$p_{T}$ [GeV]")
-    bottom_ax_barrel.set_ylabel("Year/UL2018")
-    bottom_ax_endcap.set_xlabel(r"$p_{T}$ [GeV]")
-    bottom_ax_endcap.set_ylabel("Year/UL2018")
+    ax_barrel.set_xlabel(r"$p_{T}$ [GeV]", fontsize=14)
+    ax_barrel.set_ylabel("Data/MC", fontsize=15)
+    ax_endcap.set_xlabel(r"$p_{T}$ [GeV]", fontsize=14)
+    ax_endcap.set_ylabel("Data/MC", fontsize=14)
+    ax_barrel.set_title(r"$|\eta | < 1.4442$", fontsize=15)
+    ax_endcap.set_title(r"$1.566 < |\eta | < 2.50$", fontsize=15)
+    bottom_ax_barrel.set_xlabel(r"$p_{T}$ [GeV]", fontsize=14)
+    bottom_ax_barrel.set_ylabel("Year/UL2018", fontsize=15)
+    bottom_ax_endcap.set_xlabel(r"$p_{T}$ [GeV]", fontsize=14)
+    bottom_ax_endcap.set_ylabel("Year/UL2018", fontsize=14)
 
 
 
@@ -529,7 +358,7 @@ def makeEfficiencyPlot(filename,
     bottom_ax_barrel.grid(ls="--", which="major")
     bottom_ax_endcap.grid(ls="--", which="major")
 
-    ax_barrel.legend(loc="best")
+    ax_barrel.legend(loc="best", fontsize=17)
     
     ec_l = ax_barrel.get_ylim()
     if ec_l[0] > 1:
@@ -545,6 +374,7 @@ def makeEfficiencyPlot(filename,
     
     #bottom_ax_barrel.hlines(1.0, bottom_ax_barrel.get_xlim()[0], bottom_ax_barrel.get_xlim()[1], linestyles="dashed", color="crimson", alpha=0.7)
     #bottom_ax_endcap.hlines(1.0, bottom_ax_endcap.get_xlim()[0], bottom_ax_endcap.get_xlim()[1], linestyles="dashed", color="crimson")
+
 
     ax_barrel.axhline(1.0, ls="--", color="crimson", alpha=0.7)
     ax_endcap.axhline(1.0, ls="--", color="crimson", alpha=0.7)

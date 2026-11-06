@@ -1,7 +1,8 @@
 import numpy as np
 import os
-import numpy as np
 import math
+import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import yaml
 
@@ -10,11 +11,14 @@ import yaml
 def get_parser():
     import argparse
     argParser = argparse.ArgumentParser(description = "Argument parser")
-    argParser.add_argument('jpsidata',help='config_file')
-    argParser.add_argument('zdata',help='config_file')
-    argParser.add_argument('--threads', nargs='?', const=1, type=int)
-    argParser.add_argument('--fname1', nargs='?', const="JPsi", type=str)
-    argParser.add_argument('--fname2', nargs='?', const="Z18", type=str)
+    argParser.add_argument('jpsidata',help='result_file')
+    argParser.add_argument('zdata',help='result_file')
+    argParser.add_argument('--fname1', nargs='?', const="JPsi", default="JPsi", type=str)
+    argParser.add_argument('--fname2', nargs='?', const="Z18", default="Z18", type=str)
+    argParser.add_argument('--import1', nargs='?', const="False", default="False", type=str)
+    argParser.add_argument('--import2', nargs='?', const="False", default="False", type=str)
+    argParser.add_argument('--fr1', nargs='?', const="False", default="False", type=str)
+    argParser.add_argument('--fr2', nargs='?', const="True", default="True", type=str)
     return argParser
 
 
@@ -43,6 +47,8 @@ qs = Infix(qsum)
 def main():
 
 
+    
+
 
     options = get_parser().parse_args()
 
@@ -52,110 +58,66 @@ def main():
     with open(options.zdata, 'r') as file:
         z = yaml.safe_load(file)
 
-    makeEfficiencyPlot("SF/%svs%s_rawint_effs.png" % (options.fname1, options.fname2), 
-                        j["shared_data_raw_integrals"],
-                        j["shared_data_raw_integral_sigmas"],
-                        j["shared_data_raw_integral_sigmas_bksyst"],
-                        j["shared_data_raw_integral_sigmas_rangesyst"],
-                        j["shared_mc_raw_integrals"],
-                        j["shared_mc_raw_integral_sigmas"],
-                        j["shared_mc_raw_integral_sigmas_bksyst"],
-                        j["shared_mc_raw_integral_sigmas_rangesyst"],
+
+    use_import_for_first =  True if options.import1 == "True" else False
+    use_import_for_second = True if options.import2 == "True" else False
+
+    use_fr_for_first =  True if options.fr1 == "True" else False
+    use_fr_for_second = True if options.fr2 == "True" else False
+
+
+
+    first_data_eff = "shared_data_minuit_eff"
+    first_data_eff_error = "shared_data_minuit_eff_total_err"
+    first_mc_eff = "shared_mc_cutcount_eff"
+    first_mc_eff_error = "shared_mc_cutcount_eff_total_err"
+    if use_import_for_first:
+        first_data_eff = "data_imported_eff"
+        first_data_eff_error = "data_imported_eff_total_err"
+        first_mc_eff = "shared_mc_cutcount_fr_eff"
+        first_mc_eff_error = "shared_mc_cutcount_fr_eff_total_err"
+    if use_fr_for_first:
+        first_data_eff = "shared_data_minuit_fr_eff"
+        first_data_eff_error = "shared_data_minuit_fr_eff_stat_err"
+        first_mc_eff = "shared_mc_cutcount_fr_eff"
+        first_mc_eff_error = "shared_mc_cutcount_fr_eff_total_err"
+
+
+
+    second_data_eff = "shared_data_minuit_eff"
+    second_data_eff_error = "shared_data_minuit_eff_total_err"
+    second_mc_eff = "shared_mc_cutcount_eff"
+    second_mc_eff_error = "shared_mc_cutcount_eff_total_err"
+    if use_import_for_second:
+        second_data_eff = "data_imported_eff"
+        second_data_eff_error = "data_imported_eff_total_err"
+        second_mc_eff = "shared_mc_cutcount_fr_eff"
+        second_mc_eff_error = "shared_mc_cutcount_fr_eff_total_err"
+    if use_fr_for_second:
+        second_data_eff = "shared_data_minuit_fr_eff"
+        second_data_eff_error = "shared_data_minuit_fr_eff_stat_err"
+        second_mc_eff = "shared_mc_cutcount_fr_eff"
+        second_mc_eff_error = "shared_mc_cutcount_fr_eff_total_err"
+
+
+
+    makeEfficiencyPlot("SF/%svs%s_definitive.png" % (options.fname1, options.fname2), 
+                        j[first_data_eff][(j["skipped_lowpt_bins"])*2:],
+                        j[first_data_eff_error][(j["skipped_lowpt_bins"])*2:],
+                        j[first_mc_eff][(j["skipped_lowpt_bins"])*2:],
+                        j[first_mc_eff_error][(j["skipped_lowpt_bins"])*2:],
                         j["ptbins_center_fit"],
                         j["binw_fit"],
-                        z["shared_data_raw_integrals"],
-                        z["shared_data_raw_integral_sigmas"],
-                        z["shared_data_raw_integral_sigmas_bksyst"],
-                        z["shared_data_raw_integral_sigmas_rangesyst"],
-                        z["shared_mc_raw_integrals"],
-                        z["shared_mc_raw_integral_sigmas"],
-                        z["shared_mc_raw_integral_sigmas_bksyst"],
-                        z["shared_mc_raw_integral_sigmas_rangesyst"],
+                        z[second_data_eff][(z["skipped_lowpt_bins"])*2:],
+                        z[second_data_eff_error][(z["skipped_lowpt_bins"])*2:],
+                        z[second_mc_eff][(z["skipped_lowpt_bins"])*2:],
+                        z[second_mc_eff_error][(z["skipped_lowpt_bins"])*2:],
                         z["ptbins_center_fit"],
                         z["binw_fit"],
                         options.fname1,
                         options.fname2
                         )
 
-
-
-
-    makeEfficiencyPlot("SF/%svs%s_cbint_effs.png" % (options.fname1, options.fname2), 
-                        j["shared_data_integrals_cb"],
-                        j["shared_data_integral_cb_sigmas"],
-                        j["shared_data_integral_cb_sigmas_bksyst"],
-                        j["shared_data_integral_cb_sigmas_rangesyst"],
-                        j["shared_data_integrals_cb"],
-                        j["shared_data_integral_cb_sigmas"],
-                        j["shared_data_integral_cb_sigmas_bksyst"],
-                        j["shared_data_integral_cb_sigmas_rangesyst"],
-                        j["ptbins_center_fit"],
-                        j["binw_fit"],
-                        z["shared_data_integrals_cb"],
-                        z["shared_data_integral_cb_sigmas"],
-                        z["shared_data_integral_cb_sigmas_bksyst"],
-                        z["shared_data_integral_cb_sigmas_rangesyst"],
-                        z["shared_mc_integrals_cb"],
-                        z["shared_mc_integral_cb_sigmas"],
-                        z["shared_mc_integral_cb_sigmas_bksyst"],
-                        z["shared_mc_integral_cb_sigmas_rangesyst"],
-                        z["ptbins_center_fit"],
-                        z["binw_fit"],
-                        options.fname1,
-                        options.fname2
-                        )
-
-    makeEfficiencyPlot("SF/%svs%s_cbint_%sMCraw_effs.png" % (options.fname1, options.fname2, options.fname1), 
-                        j["shared_data_integrals_cb"],
-                        j["shared_data_integral_cb_sigmas"],
-                        j["shared_data_integral_cb_sigmas_bksyst"],
-                        j["shared_data_integral_cb_sigmas_rangesyst"],
-                        j["shared_mc_raw_integrals"],
-                        j["shared_mc_raw_integral_sigmas"],
-                        j["shared_mc_raw_integral_sigmas_bksyst"],
-                        j["shared_mc_raw_integral_sigmas_rangesyst"],
-                        j["ptbins_center_fit"],
-                        j["binw_fit"],
-                        z["shared_data_integrals_cb"],
-                        z["shared_data_integral_cb_sigmas"],
-                        z["shared_data_integral_cb_sigmas_bksyst"],
-                        z["shared_data_integral_cb_sigmas_rangesyst"],
-                        z["shared_mc_integrals_cb"],
-                        z["shared_mc_integral_cb_sigmas"],
-                        z["shared_mc_integral_cb_sigmas_bksyst"],
-                        z["shared_mc_integral_cb_sigmas_rangesyst"],
-                        z["ptbins_center_fit"],
-                        z["binw_fit"],
-                        options.fname1,
-                        options.fname2
-                        )
-
-
-
-    makeEfficiencyPlot("SF/%svs%s_cbint_%sMCfullrangeraw_effs.png" % (options.fname1, options.fname2, options.fname1), 
-                        j["shared_data_integrals_cb"],
-                        j["shared_data_integral_cb_sigmas"],
-                        j["shared_data_integral_cb_sigmas_bksyst"],
-                        j["shared_data_integral_cb_sigmas_rangesyst"],
-                        j["shared_mc_raw_fullrangeintegrals"],
-                        j["shared_mc_raw_fullrangeintegral_sigmas"],
-                        [0]*len(j["shared_mc_raw_fullrangeintegrals"]),
-                        [0]*len(j["shared_mc_raw_fullrangeintegrals"]),
-                        j["ptbins_center_fit"],
-                        j["binw_fit"],
-                        z["shared_data_integrals_cb"],
-                        z["shared_data_integral_cb_sigmas"],
-                        z["shared_data_integral_cb_sigmas_bksyst"],
-                        z["shared_data_integral_cb_sigmas_rangesyst"],
-                        z["shared_mc_integrals_cb"],
-                        z["shared_mc_integral_cb_sigmas"],
-                        z["shared_mc_integral_cb_sigmas_bksyst"],
-                        z["shared_mc_integral_cb_sigmas_rangesyst"],
-                        z["ptbins_center_fit"],
-                        z["binw_fit"],
-                        options.fname1,
-                        options.fname2
-                        )
 
 
 def cutoff_errorbar_at_one(errors, efficiencies):
@@ -179,20 +141,36 @@ def cutoff_errorbar_at_one(errors, efficiencies):
 
 
 
-def get_efficiency_error(P, F, DP, DF):
-    return math.sqrt(  (  (  F/((P+F)**2)   )*DP   )**2    +    (  (  -P/((P+F)**2)     )*DF   )**2   )
+def getSFerrorbar(data, mc, data_err, mc_err, rho=0.5):
+    sf = data / mc
+    data_relerr = data_err/data
+    mc_relerr = mc_err/mc
+    rel_err = np.sqrt(  data_relerr**2  + mc_relerr**2   - 2*rho*data_relerr*mc_relerr  )
+    return rel_err * sf
 
 
-def makeEfficiencyPlot(filename, jpsi_data_integrals, jpsi_data_integral_sigmas, jpsi_data_integral_sigmas_bksyst, jpsi_data_integral_sigmas_rangesyst, jpsi_mc_integrals, jpsi_mc_integral_sigmas, jpsi_mc_integral_sigmas_bksyst, jpsi_mc_integral_sigmas_rangesyst, jpsi_ptbins_center_fit, jpsi_binw_fit, z_data_integrals, z_data_integral_sigmas, z_data_integral_sigmas_bksyst, z_data_integral_sigmas_rangesyst, z_mc_integrals, z_mc_integral_sigmas, z_mc_integral_sigmas_bksyst, z_mc_integral_sigmas_rangesyst, z_ptbins_center_fit, z_binw_fit, fname1, fname2):
 
-    jpsi_data_eff_barrel = []
-    jpsi_data_eff_barrel_error_total = []
-    jpsi_mc_eff_barrel = []
-    jpsi_mc_eff_barrel_error_total = []
-    jpsi_data_eff_endcap = []
-    jpsi_data_eff_endcap_error_total = []
-    jpsi_mc_eff_endcap = []
-    jpsi_mc_eff_endcap_error_total = []
+def makeEfficiencyPlot(filename, 
+    jpsi_data_eff, jpsi_data_eff_error, jpsi_mc_eff, jpsi_mc_eff_error,
+    jpsi_ptbins_center_fit, jpsi_binw_fit,
+
+    z_data_eff, z_data_eff_error, z_mc_eff, z_mc_eff_error,
+    z_ptbins_center_fit, z_binw_fit, 
+    
+    fname1, fname2):
+
+
+    print (fname1, fname2)
+
+
+    jpsi_data_eff_barrel = jpsi_data_eff[0::2]
+    jpsi_data_eff_barrel_error_total = jpsi_data_eff_error[0::2]
+    jpsi_mc_eff_barrel = jpsi_mc_eff[0::2]
+    jpsi_mc_eff_barrel_error_total = jpsi_mc_eff_error[0::2]
+    jpsi_data_eff_endcap = jpsi_data_eff[1::2]
+    jpsi_data_eff_endcap_error_total = jpsi_data_eff_error[1::2]
+    jpsi_mc_eff_endcap = jpsi_mc_eff[1::2]
+    jpsi_mc_eff_endcap_error_total = jpsi_mc_eff_error[1::2]
 
     jpsi_scale_factor_barrel = []
     jpsi_scale_factor_barrel_error = []
@@ -211,103 +189,28 @@ def makeEfficiencyPlot(filename, jpsi_data_integrals, jpsi_data_integral_sigmas,
     jpsi_scale_factor_endcap_black_x_binw = []
 
     pt_bin_number = 0
-    for i in range(0,len(jpsi_data_integrals),4):
-        
-        if jpsi_data_integrals[i] and jpsi_data_integrals[i+1]:
-            data_barrel_pass = jpsi_data_integrals[i]
-            data_barrel_pass_error = jpsi_data_integral_sigmas[i] if jpsi_data_integral_sigmas[i] and jpsi_data_integral_sigmas[i]/jpsi_data_integrals[i] < 1 else False
-            data_barrel_pass_error_bksyst = abs(jpsi_data_integral_sigmas_bksyst[i]) 
-            data_barrel_pass_error_rangesyst = abs(jpsi_data_integral_sigmas_rangesyst[i])
+    for i in range(len(jpsi_data_eff_barrel)):
+        if jpsi_data_eff_barrel[i] > 0 and jpsi_mc_eff_barrel[i] > 0:
 
-            data_barrel_fail = jpsi_data_integrals[i+1] 
-            data_barrel_fail_error = jpsi_data_integral_sigmas[i+1] if jpsi_data_integral_sigmas[i+1] and jpsi_data_integral_sigmas[i+1]/jpsi_data_integrals[i+1] < 1 else False
-            data_barrel_fail_error_bksyst = abs(jpsi_data_integral_sigmas_bksyst[i+1]) 
-            data_barrel_fail_error_rangesyst = abs(jpsi_data_integral_sigmas_rangesyst[i+1])
-
-            jpsi_data_eff_barrel.append(data_barrel_pass / (data_barrel_pass + data_barrel_fail))
-            jpsi_data_eff_barrel_error_total.append( get_efficiency_error(data_barrel_pass, data_barrel_fail, qsum(data_barrel_pass_error, data_barrel_pass_error_bksyst, data_barrel_pass_error_rangesyst), qsum(data_barrel_fail_error, data_barrel_fail_error_bksyst,data_barrel_fail_error_rangesyst)) if data_barrel_pass_error and data_barrel_fail_error else 0    )
-
-        else:
-            jpsi_data_eff_barrel.append(-1)
-            jpsi_data_eff_barrel_error_total.append( 0.001 )
-
-        if jpsi_data_integrals[i+2] and jpsi_data_integrals[i+3]:
-            data_endcap_pass = jpsi_data_integrals[i+2]
-            data_endcap_pass_error = jpsi_data_integral_sigmas[i+2] if jpsi_data_integral_sigmas[i+2]  and jpsi_data_integral_sigmas[i+2]/jpsi_data_integrals[i+2] < 1 else False
-            data_endcap_pass_error_bksyst = abs(jpsi_data_integral_sigmas_bksyst[i+2]) 
-            data_endcap_pass_error_rangesyst = abs(jpsi_data_integral_sigmas_rangesyst[i+2])
-            data_endcap_fail = jpsi_data_integrals[i+3]
-            data_endcap_fail_error = jpsi_data_integral_sigmas[i+3] if jpsi_data_integral_sigmas[i+3]  and jpsi_data_integral_sigmas[i+3]/jpsi_data_integrals[i+3] < 1 else False
-            data_endcap_fail_error_bksyst = abs(jpsi_data_integral_sigmas_bksyst[i+3]) 
-            data_endcap_fail_error_rangesyst = abs(jpsi_data_integral_sigmas_rangesyst[i+3])
-
-            jpsi_data_eff_endcap.append(data_endcap_pass / (data_endcap_pass + data_endcap_fail))
-            jpsi_data_eff_endcap_error_total.append( get_efficiency_error(data_endcap_pass, data_endcap_fail, qsum(data_endcap_pass_error, data_endcap_pass_error_bksyst, data_endcap_pass_error_rangesyst), qsum(data_endcap_fail_error, data_endcap_fail_error_bksyst,data_endcap_fail_error_rangesyst)) if data_endcap_pass_error and data_endcap_fail_error else 0  )
-        
-        else:
-            jpsi_data_eff_endcap.append(-1)
-            jpsi_data_eff_endcap_error_total.append( 0.001 )
-
-
-
-
-        if jpsi_mc_integrals[i] and jpsi_mc_integrals[i+1]:
-            mc_barrel_pass = jpsi_mc_integrals[i]
-            mc_barrel_pass_error = jpsi_mc_integral_sigmas[i] if jpsi_mc_integral_sigmas[i] and jpsi_mc_integral_sigmas[i]/jpsi_mc_integrals[i] < 1 else False
-            mc_barrel_pass_error_bksyst = abs(jpsi_mc_integral_sigmas_bksyst[i]) 
-            mc_barrel_pass_error_rangesyst = abs(jpsi_mc_integral_sigmas_rangesyst[i])
-            mc_barrel_fail = jpsi_mc_integrals[i+1]
-            mc_barrel_fail_error = jpsi_mc_integral_sigmas[i+1] if jpsi_mc_integral_sigmas[i+1]  and jpsi_mc_integral_sigmas[i+1]/jpsi_mc_integrals[i+1] < 1 else False
-            mc_barrel_fail_error_bksyst = abs(jpsi_mc_integral_sigmas_bksyst[i+1]) 
-            mc_barrel_fail_error_rangesyst = abs(jpsi_mc_integral_sigmas_rangesyst[i+1])
-
-            jpsi_mc_eff_barrel.append(mc_barrel_pass / (mc_barrel_pass + mc_barrel_fail))
-            jpsi_mc_eff_barrel_error_total.append( get_efficiency_error(mc_barrel_pass, mc_barrel_fail, qsum(mc_barrel_pass_error, mc_barrel_pass_error_bksyst, mc_barrel_pass_error_rangesyst), qsum(mc_barrel_fail_error, mc_barrel_fail_error_bksyst,mc_barrel_fail_error_rangesyst)) if mc_barrel_pass_error and mc_barrel_fail_error else 0 )
-        else:
-            jpsi_mc_eff_barrel.append(-1)
-            jpsi_mc_eff_barrel_error_total.append( 0.001 )
-
-
-        if jpsi_mc_integrals[i+2] and jpsi_mc_integrals[i+3]:
-            mc_endcap_pass = jpsi_mc_integrals[i+2]
-            mc_endcap_pass_error = jpsi_mc_integral_sigmas[i+2] if jpsi_mc_integral_sigmas[i+2] and jpsi_mc_integral_sigmas[i+2]/jpsi_mc_integrals[i+2] < 1 else False
-            mc_endcap_pass_error_bksyst = abs(jpsi_mc_integral_sigmas_bksyst[i+2]) 
-            mc_endcap_pass_error_rangesyst = abs(jpsi_mc_integral_sigmas_rangesyst[i+2])
-            mc_endcap_fail = jpsi_mc_integrals[i+3]
-            mc_endcap_fail_error = jpsi_mc_integral_sigmas[i+3] if jpsi_mc_integral_sigmas[i+3] and jpsi_mc_integral_sigmas[i+3]/jpsi_mc_integrals[i+3] < 1 else False
-            mc_endcap_fail_error_bksyst = abs(jpsi_mc_integral_sigmas_bksyst[i+3])
-            mc_endcap_fail_error_rangesyst = abs(jpsi_mc_integral_sigmas_rangesyst[i+3])
-
-            jpsi_mc_eff_endcap.append(mc_endcap_pass / (mc_endcap_pass + mc_endcap_fail))
-            jpsi_mc_eff_endcap_error_total.append( get_efficiency_error(mc_endcap_pass, mc_endcap_fail, qsum(mc_endcap_pass_error, mc_endcap_pass_error_bksyst,mc_endcap_pass_error_rangesyst), qsum(mc_endcap_fail_error, mc_endcap_fail_error_bksyst,mc_endcap_fail_error_rangesyst)) if mc_endcap_pass_error and mc_endcap_fail_error else 0   )
-        else:
-            jpsi_mc_eff_endcap.append(-1)
-            jpsi_mc_eff_endcap_error_total.append( 0.001 )
-
-
-
-
-        if jpsi_data_eff_barrel[-1] > 0 and jpsi_mc_eff_barrel[-1] > 0:
-
-            if jpsi_data_eff_barrel_error_total[-1] > 0 and jpsi_mc_eff_barrel_error_total[-1]:
-                jpsi_scale_factor_barrel.append(jpsi_data_eff_barrel[-1]/jpsi_mc_eff_barrel[-1])
+            if jpsi_data_eff_barrel_error_total[i] > 0 and jpsi_mc_eff_barrel_error_total[i]:
+                jpsi_scale_factor_barrel.append(jpsi_data_eff_barrel[i]/jpsi_mc_eff_barrel[i])
                 jpsi_scale_factor_x_barrel.append(jpsi_ptbins_center_fit[pt_bin_number])
                 jpsi_scale_factor_x_barrel_binw.append(jpsi_binw_fit[pt_bin_number])
-                jpsi_scale_factor_barrel_error.append( ((jpsi_data_eff_barrel_error_total[-1]/jpsi_data_eff_barrel[-1]) |qs| (jpsi_mc_eff_barrel_error_total[-1]/jpsi_mc_eff_barrel[-1]) ) * jpsi_scale_factor_barrel[-1]    )   # HALOOOO
+                jpsi_scale_factor_barrel_error.append( getSFerrorbar(jpsi_data_eff_barrel[i], jpsi_mc_eff_barrel[i], jpsi_data_eff_barrel_error_total[i],  jpsi_mc_eff_barrel_error_total[i]   )  )
             else:
-                jpsi_scale_factor_barrel_black.append(jpsi_data_eff_barrel[-1]/jpsi_mc_eff_barrel[-1])
+                jpsi_scale_factor_barrel_black.append(jpsi_data_eff_barrel[i]/jpsi_mc_eff_barrel[i])
                 jpsi_scale_factor_barrel_black_x.append(jpsi_ptbins_center_fit[pt_bin_number])
                 jpsi_scale_factor_barrel_black_x_binw.append(jpsi_binw_fit[pt_bin_number])
 
-        if jpsi_data_eff_endcap[-1] > 0 and jpsi_mc_eff_endcap[-1] > 0:
+        if jpsi_data_eff_endcap[i] > 0 and jpsi_mc_eff_endcap[i] > 0:
 
-            if jpsi_data_eff_endcap_error_total[-1] > 0 and jpsi_mc_eff_endcap_error_total[-1] > 0:
-                jpsi_scale_factor_endcap.append(jpsi_data_eff_endcap[-1]/jpsi_mc_eff_endcap[-1])
+            if jpsi_data_eff_endcap_error_total[i] > 0 and jpsi_mc_eff_endcap_error_total[i] > 0:
+                jpsi_scale_factor_endcap.append(jpsi_data_eff_endcap[i]/jpsi_mc_eff_endcap[i])
                 jpsi_scale_factor_x_endcap.append(jpsi_ptbins_center_fit[pt_bin_number])
                 jpsi_scale_factor_x_endcap_binw.append(jpsi_binw_fit[pt_bin_number])
-                jpsi_scale_factor_endcap_error.append( ((jpsi_data_eff_endcap_error_total[-1]/jpsi_data_eff_endcap[-1]) |qs| (jpsi_mc_eff_endcap_error_total[-1]/jpsi_mc_eff_endcap[-1]) ) * jpsi_scale_factor_endcap[-1]    )
+                jpsi_scale_factor_endcap_error.append( getSFerrorbar(jpsi_data_eff_endcap[i], jpsi_mc_eff_endcap[i], jpsi_data_eff_endcap_error_total[i],  jpsi_mc_eff_endcap_error_total[i])     )
             else:
-                jpsi_scale_factor_endcap_black.append(jpsi_data_eff_endcap[-1]/jpsi_mc_eff_endcap[-1])
+                jpsi_scale_factor_endcap_black.append(jpsi_data_eff_endcap[i]/jpsi_mc_eff_endcap[i])
                 jpsi_scale_factor_endcap_black_x.append(jpsi_ptbins_center_fit[pt_bin_number])
                 jpsi_scale_factor_endcap_black_x_binw.append(jpsi_binw_fit[pt_bin_number])
 
@@ -316,14 +219,14 @@ def makeEfficiencyPlot(filename, jpsi_data_integrals, jpsi_data_integral_sigmas,
 
 
 
-    z_data_eff_barrel = []
-    z_data_eff_barrel_error_total = []
-    z_mc_eff_barrel = []
-    z_mc_eff_barrel_error_total = []
-    z_data_eff_endcap = []
-    z_data_eff_endcap_error_total = []
-    z_mc_eff_endcap = []
-    z_mc_eff_endcap_error_total = []
+    z_data_eff_barrel = z_data_eff[0::2]
+    z_data_eff_barrel_error_total = z_data_eff_error[0::2]
+    z_mc_eff_barrel = z_mc_eff[0::2]
+    z_mc_eff_barrel_error_total = z_mc_eff_error[0::2]
+    z_data_eff_endcap = z_data_eff[1::2]
+    z_data_eff_endcap_error_total = z_data_eff_error[1::2]
+    z_mc_eff_endcap = z_mc_eff[1::2]
+    z_mc_eff_endcap_error_total = z_mc_eff_error[1::2]
 
     z_scale_factor_barrel = []
     z_scale_factor_barrel_error = []
@@ -341,98 +244,31 @@ def makeEfficiencyPlot(filename, jpsi_data_integrals, jpsi_data_integral_sigmas,
     z_scale_factor_endcap_black_x = []
     z_scale_factor_endcap_black_x_binw = []
 
+
+
     pt_bin_number = 0
-    for i in range(0,len(z_data_integrals),4):
-        
-        if z_data_integrals[i] and z_data_integrals[i+1]:
-            data_barrel_pass = z_data_integrals[i]
-            data_barrel_pass_error = z_data_integral_sigmas[i] if z_data_integral_sigmas[i] and z_data_integral_sigmas[i]/z_data_integrals[i] < 1 else False
-            data_barrel_pass_error_bksyst = abs(z_data_integral_sigmas_bksyst[i]) 
-            data_barrel_pass_error_rangesyst = abs(z_data_integral_sigmas_rangesyst[i])
-            data_barrel_fail = z_data_integrals[i+1] 
-            data_barrel_fail_error = z_data_integral_sigmas[i+1] if z_data_integral_sigmas[i+1] and z_data_integral_sigmas[i+1]/z_data_integrals[i+1] < 1 else False
-            data_barrel_fail_error_bksyst = abs(z_data_integral_sigmas_bksyst[i+1]) 
-            data_barrel_fail_error_rangesyst = abs(z_data_integral_sigmas_rangesyst[i+1])
+    for i in range(len(z_data_eff_barrel)):
+        if z_data_eff_barrel[i] > 0 and z_mc_eff_barrel[i] > 0:
 
-
-            z_data_eff_barrel.append(data_barrel_pass / (data_barrel_pass + data_barrel_fail))
-            z_data_eff_barrel_error_total.append(get_efficiency_error(data_barrel_pass, data_barrel_fail, qsum(data_barrel_pass_error, data_barrel_pass_error_bksyst, data_barrel_pass_error_rangesyst), qsum(data_barrel_fail_error, data_barrel_fail_error_bksyst,data_barrel_fail_error_rangesyst)) if data_barrel_pass_error and data_barrel_fail_error else 0  )
-        else:
-            z_data_eff_barrel.append(-1)
-            z_data_eff_barrel_error_total.append( 0.001 )
-
-        if z_data_integrals[i+2] and z_data_integrals[i+3]:
-            data_endcap_pass = z_data_integrals[i+2]
-            data_endcap_pass_error = z_data_integral_sigmas[i+2] if z_data_integral_sigmas[i+2]  and z_data_integral_sigmas[i+2]/z_data_integrals[i+2] < 1 else False
-            data_endcap_pass_error_bksyst = abs(z_data_integral_sigmas_bksyst[i+2]) 
-            data_endcap_pass_error_rangesyst = abs(z_data_integral_sigmas_rangesyst[i+2])
-            data_endcap_fail = z_data_integrals[i+3]
-            data_endcap_fail_error = z_data_integral_sigmas[i+3] if z_data_integral_sigmas[i+3]  and z_data_integral_sigmas[i+3]/z_data_integrals[i+3] < 1 else False
-            data_endcap_fail_error_bksyst = abs(z_data_integral_sigmas_bksyst[i+3])
-            data_endcap_fail_error_rangesyst = abs(z_data_integral_sigmas_rangesyst[i+3]) 
-
-            z_data_eff_endcap.append(data_endcap_pass / (data_endcap_pass + data_endcap_fail))
-            z_data_eff_endcap_error_total.append(  get_efficiency_error(data_endcap_pass, data_endcap_fail, qsum(data_endcap_pass_error, data_endcap_pass_error_bksyst, data_endcap_pass_error_rangesyst), qsum(data_endcap_fail_error, data_endcap_fail_error_bksyst,data_endcap_fail_error_rangesyst)) if data_endcap_pass_error and data_endcap_fail_error else 0 )
-        else:
-            z_data_eff_endcap.append(-1)
-            z_data_eff_endcap_error_total.append( 0.001 )
-
-
-        if z_mc_integrals[i] and z_mc_integrals[i+1]:
-            mc_barrel_pass = z_mc_integrals[i]
-            mc_barrel_pass_error = z_mc_integral_sigmas[i] if z_mc_integral_sigmas[i] and z_mc_integral_sigmas[i]/z_mc_integrals[i] < 1 else False
-            mc_barrel_pass_error_bksyst = abs(z_mc_integral_sigmas_bksyst[i]) 
-            mc_barrel_pass_error_rangesyst = abs(z_mc_integral_sigmas_rangesyst[i])
-            mc_barrel_fail = z_mc_integrals[i+1]
-            mc_barrel_fail_error = z_mc_integral_sigmas[i+1] if z_mc_integral_sigmas[i+1]  and z_mc_integral_sigmas[i+1]/z_mc_integrals[i+1] < 1 else False
-            mc_barrel_fail_error_bksyst = abs(z_mc_integral_sigmas_bksyst[i+1]) 
-            mc_barrel_fail_error_rangesyst = abs(z_mc_integral_sigmas_rangesyst[i+1])
-
-            z_mc_eff_barrel.append(mc_barrel_pass / (mc_barrel_pass + mc_barrel_fail))
-            z_mc_eff_barrel_error_total.append(get_efficiency_error(mc_barrel_pass, mc_barrel_fail, qsum(mc_barrel_pass_error, mc_barrel_pass_error_bksyst, mc_barrel_pass_error_rangesyst), qsum(mc_barrel_fail_error, mc_barrel_fail_error_bksyst,mc_barrel_fail_error_rangesyst)) if mc_barrel_pass_error and mc_barrel_fail_error else 0   )
-        else:
-            z_mc_eff_barrel.append(-1)
-            z_mc_eff_barrel_error_total.append( 0.001 )
-
-
-
-        if z_mc_integrals[i+2] and z_mc_integrals[i+3]:
-            mc_endcap_pass = z_mc_integrals[i+2]
-            mc_endcap_pass_error = z_mc_integral_sigmas[i+2] if z_mc_integral_sigmas[i+2] and z_mc_integral_sigmas[i+2]/z_mc_integrals[i+2] < 1 else False
-            mc_endcap_pass_error_bksyst = abs(z_mc_integral_sigmas_bksyst[i+2]) 
-            mc_endcap_pass_error_rangesyst = abs(z_mc_integral_sigmas_rangesyst[i+2])
-            mc_endcap_fail = z_mc_integrals[i+3]
-            mc_endcap_fail_error = z_mc_integral_sigmas[i+3] if z_mc_integral_sigmas[i+3] and z_mc_integral_sigmas[i+3]/z_mc_integrals[i+3] < 1 else False
-            mc_endcap_fail_error_bksyst = abs(z_mc_integral_sigmas_bksyst[i+3]) 
-            mc_endcap_fail_error_rangesyst = abs(z_mc_integral_sigmas_rangesyst[i+3])
-
-            z_mc_eff_endcap.append(mc_endcap_pass / (mc_endcap_pass + mc_endcap_fail))
-            z_mc_eff_endcap_error_total.append( get_efficiency_error(mc_endcap_pass, mc_endcap_fail, qsum(mc_endcap_pass_error, mc_endcap_pass_error_bksyst,mc_endcap_pass_error_rangesyst), qsum(mc_endcap_fail_error, mc_endcap_fail_error_bksyst,mc_endcap_fail_error_rangesyst)) if mc_endcap_pass_error and mc_endcap_fail_error else 0  )
-        else:
-            z_mc_eff_endcap.append(-1)
-            z_mc_eff_endcap_error_total.append( 0.001 )
-
-        if z_data_eff_barrel[-1] > 0 and z_mc_eff_barrel[-1] > 0:
-
-            if z_data_eff_barrel_error_total[-1] > 0 and z_mc_eff_barrel_error_total[-1]:
-                z_scale_factor_barrel.append(z_data_eff_barrel[-1]/z_mc_eff_barrel[-1])
+            if z_data_eff_barrel_error_total[i] > 0 and z_mc_eff_barrel_error_total[i]:
+                z_scale_factor_barrel.append(z_data_eff_barrel[i]/z_mc_eff_barrel[i])
                 z_scale_factor_x_barrel.append(z_ptbins_center_fit[pt_bin_number])
                 z_scale_factor_x_barrel_binw.append(z_binw_fit[pt_bin_number])
-                z_scale_factor_barrel_error.append( ((z_data_eff_barrel_error_total[-1]/z_data_eff_barrel[-1]) |qs| (z_mc_eff_barrel_error_total[-1]/z_mc_eff_barrel[-1]) ) * z_scale_factor_barrel[-1]    )  # HALOOOO!!!
+                z_scale_factor_barrel_error.append( getSFerrorbar(z_data_eff_barrel[i], z_mc_eff_barrel[i], z_data_eff_barrel_error_total[i],  z_mc_eff_barrel_error_total[i] )   )  
             else:
-                z_scale_factor_barrel_black.append(z_data_eff_barrel[-1]/z_mc_eff_barrel[-1])
+                z_scale_factor_barrel_black.append(z_data_eff_barrel[i]/z_mc_eff_barrel[i])
                 z_scale_factor_barrel_black_x.append(z_ptbins_center_fit[pt_bin_number])
                 z_scale_factor_barrel_black_x_binw.append(z_binw_fit[pt_bin_number])
 
-        if z_data_eff_endcap[-1] > 0 and z_mc_eff_endcap[-1] > 0:
+        if z_data_eff_endcap[i] > 0 and z_mc_eff_endcap[i] > 0:
 
-            if z_data_eff_endcap_error_total[-1] > 0 and z_mc_eff_endcap_error_total[-1] > 0:
-                z_scale_factor_endcap.append(z_data_eff_endcap[-1]/z_mc_eff_endcap[-1])
+            if z_data_eff_endcap_error_total[i] > 0 and z_mc_eff_endcap_error_total[i] > 0:
+                z_scale_factor_endcap.append(z_data_eff_endcap[i]/z_mc_eff_endcap[i])
                 z_scale_factor_x_endcap.append(z_ptbins_center_fit[pt_bin_number])
                 z_scale_factor_x_endcap_binw.append(z_binw_fit[pt_bin_number])
-                z_scale_factor_endcap_error.append( ((z_data_eff_endcap_error_total[-1]/z_data_eff_endcap[-1]) |qs| (z_mc_eff_endcap_error_total[-1]/z_mc_eff_endcap[-1]) ) * z_scale_factor_endcap[-1]    )
+                z_scale_factor_endcap_error.append(  getSFerrorbar(z_data_eff_endcap[i], z_mc_eff_endcap[i], z_data_eff_endcap_error_total[i],  z_mc_eff_endcap_error_total[i])    )
             else:
-                z_scale_factor_endcap_black.append(z_data_eff_endcap[-1]/z_mc_eff_endcap[-1])
+                z_scale_factor_endcap_black.append(z_data_eff_endcap[i]/z_mc_eff_endcap[i])
                 z_scale_factor_endcap_black_x.append(z_ptbins_center_fit[pt_bin_number])
                 z_scale_factor_endcap_black_x_binw.append(z_binw_fit[pt_bin_number])
 
@@ -455,15 +291,17 @@ def makeEfficiencyPlot(filename, jpsi_data_integrals, jpsi_data_integral_sigmas,
     bottom_ax_barrel = bottom_axs[0]
     bottom_ax_endcap = bottom_axs[1]
 
-    ax_barrel.set_xlabel(r"$p_{T}$ [GeV]")
-    ax_barrel.set_ylabel("Efficiency")
-    ax_barrel.set_title(r"$|\eta | < 1.4442$")
-    ax_endcap.set_title(r"$1.566 < |\eta | < 2.50$")
-    bottom_ax_barrel.set_xlabel(r"$p_{T}$ [GeV]")
-    bottom_ax_barrel.set_ylabel("Data/MC")
+    ax_barrel.set_xlabel(r"$p_{T}$ [GeV]", fontsize=14)
+    ax_endcap.set_xlabel(r"$p_{T}$ [GeV]", fontsize=14)
+    ax_barrel.set_ylabel("Efficiency", fontsize=15)
+    ax_barrel.set_title(r"$|\eta | < 1.4442$", fontsize=15)
+    ax_endcap.set_title(r"$1.566 < |\eta | < 2.50$", fontsize=15)
+    bottom_ax_barrel.set_xlabel(r"$p_{T}$ [GeV]", fontsize=14)
+    bottom_ax_endcap.set_xlabel(r"$p_{T}$ [GeV]", fontsize=14)
+    bottom_ax_barrel.set_ylabel("Data/MC", fontsize=15)
 
 
-    # FIXME: EZT RENDESEN, HOGY A SF ERRORBARBA IS SZAMITSON!!!!
+    # FIXME: EZT RENDESEN, HOGY A SF ERRORBARBA IS SZAMITSON!!!!?
 
     jpsi_data_eff_barrel_error_total = cutoff_errorbar_at_one(jpsi_data_eff_barrel_error_total, jpsi_data_eff_barrel)
     jpsi_mc_eff_barrel_error_total = cutoff_errorbar_at_one(jpsi_mc_eff_barrel_error_total, jpsi_mc_eff_barrel)
@@ -474,6 +312,8 @@ def makeEfficiencyPlot(filename, jpsi_data_integrals, jpsi_data_integral_sigmas,
     z_data_eff_endcap_error_total = cutoff_errorbar_at_one(z_data_eff_endcap_error_total, z_data_eff_endcap)
     z_mc_eff_endcap_error_total = cutoff_errorbar_at_one(z_mc_eff_endcap_error_total, z_mc_eff_endcap)
 
+
+    
 
 
     #ax_barrel.plot(ptbins_center_fit, data_eff_barrel, "bs")
